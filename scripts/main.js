@@ -665,10 +665,17 @@ class App {
                 let input = document.createElement('input')
                 input.type = "text"
                 input.value = animation.name;
-                input.addEventListener('blur', () => {
-                    if(this.animation) this.animation.stop();
-                })
                 input.addEventListener('focus', () => {
+                    // Remove active class from all animation items
+                    document.querySelectorAll('.animation-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    // Add active class to current item
+                    container.classList.add('active');
+                    
+                    // Stop previous animation if any
+                    if(this.animation) this.animation.stop();
+                    // Play new animation
                     this.animation = this.mixer.clipAction(animation);
                     this.animation.play()
                 })

@@ -29872,10 +29872,12 @@ void main() {
           let input = document.createElement("input");
           input.type = "text";
           input.value = animation.name;
-          input.addEventListener("blur", () => {
-            if (this.animation) this.animation.stop();
-          });
           input.addEventListener("focus", () => {
+            document.querySelectorAll(".animation-item").forEach((item) => {
+              item.classList.remove("active");
+            });
+            container.classList.add("active");
+            if (this.animation) this.animation.stop();
             this.animation = this.mixer.clipAction(animation);
             this.animation.play();
           });

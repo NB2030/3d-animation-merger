@@ -170,6 +170,13 @@ main {
 	outline: 0;
 }
 
+.animation-item.active input {
+	background-color: rgba(127, 255, 0, 0.2);
+	color: chartreuse;
+	border-left: 3px solid chartreuse;
+	padding-left: calc(1em - 3px);
+}
+
 .delete-animation-btn {
 	flex-shrink: 0;
 	width: 32px;
