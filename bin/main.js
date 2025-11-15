@@ -29364,15 +29364,82 @@ void main() {
       this.$textureMap = document.getElementById("texture-map");
       this.$export = document.getElementById("export-btn");
       this.$ui = document.getElementById("animations-ui");
-      this.$transformBtn = document.getElementById("transform-mode-btn");
+      this.$transformBtns = document.querySelectorAll(".transform-btn");
       this.$inPlaceCheckbox = document.getElementById("in-place-checkbox");
       this.$filenameInput = document.getElementById("filename-input");
+      this.$textureTypeBtns = document.querySelectorAll(".texture-type-btn");
+      this.$shadedSection = document.getElementById("shaded-textures");
+      this.$pbrSection = document.getElementById("pbr-textures");
+      this.$usePackedTexture = document.getElementById("use-packed-texture");
+      this.$packedSection = document.getElementById("packed-texture-section");
+      this.$separateSection = document.getElementById("separate-textures-section");
+      this.$textureBaseColor = document.getElementById("texture-basecolor");
+      this.$textureNormal = document.getElementById("texture-normal");
+      this.$texturePacked = document.getElementById("texture-packed");
+      this.$textureMetallic = document.getElementById("texture-metallic");
+      this.$textureRoughness = document.getElementById("texture-roughness");
+      this.$textureAO = document.getElementById("texture-ao");
+      this.$textureEmissive = document.getElementById("texture-emissive");
       this.$source.addEventListener("change", this.onSourceChange.bind(this));
       this.$animation.addEventListener("change", this.onAnimationChange.bind(this));
       this.$textureMap.addEventListener("change", this.onTextureChange.bind(this));
+      this.$textureBaseColor.addEventListener("change", (e) => this.onPBRTextureChange(e, "map"));
+      this.$textureNormal.addEventListener("change", (e) => this.onPBRTextureChange(e, "normalMap"));
+      this.$texturePacked.addEventListener("change", this.onPackedTextureChange.bind(this));
+      this.$textureMetallic.addEventListener("change", (e) => this.onPBRTextureChange(e, "metalnessMap"));
+      this.$textureRoughness.addEventListener("change", (e) => this.onPBRTextureChange(e, "roughnessMap"));
+      this.$textureAO.addEventListener("change", (e) => this.onPBRTextureChange(e, "aoMap"));
+      this.$textureEmissive.addEventListener("change", (e) => this.onPBRTextureChange(e, "emissiveMap"));
+      this.$textureTypeBtns.forEach((btn) => {
+        btn.addEventListener("click", this.onTextureTypeChange.bind(this));
+      });
+      this.$usePackedTexture.addEventListener("change", this.onPackedModeToggle.bind(this));
+      this.$tabBtns = document.querySelectorAll(".tab-btn");
+      this.$tabBtns.forEach((btn) => {
+        btn.addEventListener("click", this.onTabChange.bind(this));
+      });
       this.$export.addEventListener("click", this.exportGLB.bind(this));
-      this.$transformBtn.addEventListener("click", this.changeTransformMode.bind(this));
+      this.$transformBtns.forEach((btn) => {
+        btn.addEventListener("click", this.onTransformModeClick.bind(this));
+      });
+      this.$settingsBtn = document.getElementById("settings-btn");
+      this.$settingsModal = document.getElementById("settings-modal");
+      this.$settingsCloseBtn = document.getElementById("settings-close-btn");
+      this.$bgColorPicker = document.getElementById("bg-color-picker");
+      this.$resetBgColor = document.getElementById("reset-bg-color");
+      this.$gridColorPicker = document.getElementById("grid-color-picker");
+      this.$resetGridColor = document.getElementById("reset-grid-color");
+      this.$gridSizeSlider = document.getElementById("grid-size-slider");
+      this.$gridSizeValue = document.getElementById("grid-size-value");
+      this.$resetGridSize = document.getElementById("reset-grid-size");
+      this.$gridDivisionsSlider = document.getElementById("grid-divisions-slider");
+      this.$gridDivisionsValue = document.getElementById("grid-divisions-value");
+      this.$resetGridDivisions = document.getElementById("reset-grid-divisions");
+      this.$settingsBtn.addEventListener("click", this.openSettings.bind(this));
+      this.$settingsCloseBtn.addEventListener("click", this.closeSettings.bind(this));
+      this.$settingsModal.addEventListener("click", (e) => {
+        if (e.target === this.$settingsModal) this.closeSettings();
+      });
+      this.$bgColorPicker.addEventListener("input", this.onBgColorChange.bind(this));
+      this.$resetBgColor.addEventListener("click", this.resetBgColor.bind(this));
+      this.$gridColorPicker.addEventListener("input", this.onGridColorChange.bind(this));
+      this.$resetGridColor.addEventListener("click", this.resetGridColor.bind(this));
+      this.$gridSizeSlider.addEventListener("input", this.onGridSizeChange.bind(this));
+      this.$resetGridSize.addEventListener("click", this.resetGridSize.bind(this));
+      this.$gridDivisionsSlider.addEventListener("input", this.onGridDivisionsChange.bind(this));
+      this.$resetGridDivisions.addEventListener("click", this.resetGridDivisions.bind(this));
       this.customTexture = null;
+      this.textureType = "shaded";
+      this.usePackedTexture = false;
+      this.packedTexture = null;
+      this.pbrTextures = {
+        map: null,
+        normalMap: null,
+        metalnessMap: null,
+        roughnessMap: null,
+        aoMap: null,
+        emissiveMap: null
+      };
       this.resize();
       this.resizeBind = this.resize.bind(this);
       window.addEventListener("resize", this.resizeBind);
@@ -29402,13 +29469,13 @@ void main() {
     }
     initScene() {
       this.scene = new Scene();
-      const gridHelper = new GridHelper(10, 10, "#969fbf", "#2a2a35");
-      gridHelper.position.y = 0;
-      gridHelper.position.x = 0;
-      console.log(gridHelper.material);
-      gridHelper.material.opacity = 0.25;
-      gridHelper.material.transparent = true;
-      this.scene.add(gridHelper);
+      this.gridHelper = new GridHelper(15, 10, "#969fbf", "#969fbf");
+      this.gridHelper.position.y = 0;
+      this.gridHelper.position.x = 0;
+      console.log(this.gridHelper.material);
+      this.gridHelper.material.opacity = 1;
+      this.gridHelper.material.transparent = true;
+      this.scene.add(this.gridHelper);
       const axesHelper = new AxesHelper(0.5);
       this.scene.add(axesHelper);
       const ambientLight = new AmbientLight(16777215, 0.6);
@@ -29521,8 +29588,10 @@ void main() {
             });
             this.updateUI();
             this.fixNonPBRMaterials();
-            if (this.customTexture) {
+            if (this.textureType === "shaded" && this.customTexture) {
               this.applyTextureToModel(this.customTexture);
+            } else if (this.textureType === "pbr") {
+              this.applyPBRTexturesToModel();
             }
             this.scene.add(this.object);
             console.log(this.object);
@@ -29560,6 +29629,37 @@ void main() {
         e.currentTarget.value = "";
       });
     }
+    onTabChange(e) {
+      const tabName = e.currentTarget.dataset.tab;
+      this.$tabBtns.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll(".tab-content").forEach((content) => {
+        content.classList.remove("active");
+        content.style.display = "none";
+      });
+      const activeTab = document.getElementById(`tab-${tabName}`);
+      if (activeTab) {
+        activeTab.classList.add("active");
+        activeTab.style.display = "block";
+      }
+      console.log("Tab changed to:", tabName);
+    }
+    onTextureTypeChange(e) {
+      const type = e.currentTarget.dataset.type;
+      this.textureType = type;
+      this.$textureTypeBtns.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.type === type);
+      });
+      if (type === "shaded") {
+        this.$shadedSection.style.display = "";
+        this.$pbrSection.style.display = "none";
+      } else {
+        this.$shadedSection.style.display = "none";
+        this.$pbrSection.style.display = "";
+      }
+      console.log("Texture type changed to:", type);
+    }
     onTextureChange(e) {
       const file = e.currentTarget.files[0];
       if (!file) return;
@@ -29575,7 +29675,67 @@ void main() {
           if (this.object) {
             this.applyTextureToModel(texture);
           }
-          console.log("Texture loaded and applied");
+          console.log("Shaded texture loaded and applied");
+        };
+        img.src = event.target.result;
+      }, { once: true });
+      reader.readAsDataURL(file);
+    }
+    onPackedModeToggle(e) {
+      this.usePackedTexture = e.currentTarget.checked;
+      if (this.usePackedTexture) {
+        this.$packedSection.style.display = "";
+        this.$separateSection.style.display = "none";
+      } else {
+        this.$packedSection.style.display = "none";
+        this.$separateSection.style.display = "";
+      }
+      console.log("Packed texture mode:", this.usePackedTexture);
+    }
+    onPackedTextureChange(e) {
+      const file = e.currentTarget.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.addEventListener("load", (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const textureLoader = new TextureLoader();
+          const texture = textureLoader.load(event.target.result);
+          texture.colorSpace = LinearSRGBColorSpace;
+          texture.flipY = true;
+          this.packedTexture = texture;
+          this.pbrTextures.aoMap = texture;
+          this.pbrTextures.roughnessMap = texture;
+          this.pbrTextures.metalnessMap = texture;
+          if (this.object) {
+            this.applyPBRTexturesToModel();
+          }
+          console.log("Packed ORM texture loaded and applied");
+        };
+        img.src = event.target.result;
+      }, { once: true });
+      reader.readAsDataURL(file);
+    }
+    onPBRTextureChange(e, mapType) {
+      const file = e.currentTarget.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.addEventListener("load", (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const textureLoader = new TextureLoader();
+          const texture = textureLoader.load(event.target.result);
+          if (mapType === "map" || mapType === "emissiveMap") {
+            texture.colorSpace = SRGBColorSpace;
+          } else {
+            texture.colorSpace = LinearSRGBColorSpace;
+          }
+          texture.flipY = true;
+          this.pbrTextures[mapType] = texture;
+          if (this.object) {
+            this.applyPBRTexturesToModel();
+          }
+          console.log(`PBR ${mapType} loaded and applied`);
         };
         img.src = event.target.result;
       }, { once: true });
@@ -29596,6 +29756,75 @@ void main() {
             child.material.map = texture;
             child.material.needsUpdate = true;
           }
+        }
+      });
+    }
+    applyPBRTexturesToModel() {
+      if (!this.object) return;
+      this.object.traverse((child) => {
+        if (child.isMesh) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((mat) => {
+            if (!mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial) {
+              const newMat = new MeshStandardMaterial({
+                color: mat.color || new Color(16777215),
+                transparent: mat.transparent,
+                opacity: mat.opacity !== void 0 ? mat.opacity : 1,
+                side: mat.side
+              });
+              if (Array.isArray(child.material)) {
+                const index = child.material.indexOf(mat);
+                child.material[index] = newMat;
+              } else {
+                child.material = newMat;
+              }
+              mat.dispose();
+              mat = Array.isArray(child.material) ? child.material[child.material.indexOf(newMat)] : child.material;
+            }
+            if (this.pbrTextures.map) {
+              if (mat.map) mat.map.dispose();
+              mat.map = this.pbrTextures.map;
+            }
+            if (this.pbrTextures.normalMap) {
+              if (mat.normalMap) mat.normalMap.dispose();
+              mat.normalMap = this.pbrTextures.normalMap;
+              mat.normalScale = new Vector2(1, 1);
+            }
+            if (this.usePackedTexture && this.packedTexture) {
+              if (mat.aoMap) mat.aoMap.dispose();
+              mat.aoMap = this.packedTexture;
+              mat.aoMapIntensity = 1;
+              if (mat.roughnessMap) mat.roughnessMap.dispose();
+              mat.roughnessMap = this.packedTexture;
+              mat.roughness = 1;
+              if (mat.metalnessMap) mat.metalnessMap.dispose();
+              mat.metalnessMap = this.packedTexture;
+              mat.metalness = 1;
+            } else {
+              if (this.pbrTextures.metalnessMap) {
+                if (mat.metalnessMap) mat.metalnessMap.dispose();
+                mat.metalnessMap = this.pbrTextures.metalnessMap;
+                mat.metalness = 1;
+              }
+              if (this.pbrTextures.roughnessMap) {
+                if (mat.roughnessMap) mat.roughnessMap.dispose();
+                mat.roughnessMap = this.pbrTextures.roughnessMap;
+                mat.roughness = 1;
+              }
+              if (this.pbrTextures.aoMap) {
+                if (mat.aoMap) mat.aoMap.dispose();
+                mat.aoMap = this.pbrTextures.aoMap;
+                mat.aoMapIntensity = 1;
+              }
+            }
+            if (this.pbrTextures.emissiveMap) {
+              if (mat.emissiveMap) mat.emissiveMap.dispose();
+              mat.emissiveMap = this.pbrTextures.emissiveMap;
+              mat.emissive = new Color(16777215);
+              mat.emissiveIntensity = 1;
+            }
+            mat.needsUpdate = true;
+          });
         }
       });
     }
@@ -29638,6 +29867,8 @@ void main() {
       if (this.object.animations.length) {
         for (let animation of this.object.animations) {
           console.log(animation.name);
+          let container = document.createElement("div");
+          container.className = "animation-item";
           let input = document.createElement("input");
           input.type = "text";
           input.value = animation.name;
@@ -29651,24 +29882,36 @@ void main() {
           input.addEventListener("change", () => {
             animation.name = input.value;
           });
-          input.addEventListener("contextmenu", (e) => {
-            e.preventDefault();
+          let deleteBtn = document.createElement("button");
+          deleteBtn.className = "delete-animation-btn";
+          deleteBtn.innerHTML = "\xD7";
+          deleteBtn.title = "Delete animation";
+          deleteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
             console.log(this.object.animations, this.object.animations.indexOf(animation));
             this.object.animations.splice(this.object.animations.indexOf(animation), 1);
             console.log(this.object.animations);
             this.updateUI();
-            return false;
-          }, false);
-          this.$ui.appendChild(input);
+          });
+          container.appendChild(input);
+          container.appendChild(deleteBtn);
+          this.$ui.appendChild(container);
         }
       }
     }
-    changeTransformMode() {
-      const modes = ["translate", "rotate", "scale"];
-      const currentMode = this.transformControl.getMode();
-      const index = modes.indexOf(currentMode);
-      const newMode = index < modes.length - 1 ? modes[index + 1] : modes[0];
-      this.transformControl.setMode(newMode);
+    onTransformModeClick(e) {
+      const btn = e.currentTarget;
+      const mode = btn.dataset.mode;
+      this.$transformBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      if (mode === "none") {
+        this.transformControl.detach();
+      } else {
+        this.transformControl.setMode(mode);
+        if (this.object) {
+          this.transformControl.attach(this.object);
+        }
+      }
     }
     makeAnimationsInPlace(animations) {
       if (!animations || animations.length === 0) return animations;
@@ -29740,6 +29983,78 @@ void main() {
           animations: animationsToExport
         }
       );
+    }
+    openSettings() {
+      this.$settingsModal.style.display = "flex";
+    }
+    closeSettings() {
+      this.$settingsModal.style.display = "none";
+    }
+    onBgColorChange(e) {
+      const color = e.target.value;
+      this.renderer.setClearColor(color);
+      if (this.scene.fog) {
+        this.scene.fog.color.set(color);
+      }
+    }
+    resetBgColor() {
+      const defaultColor = "#15151a";
+      this.$bgColorPicker.value = defaultColor;
+      this.renderer.setClearColor(defaultColor);
+      if (this.scene.fog) {
+        this.scene.fog.color.set(defaultColor);
+      }
+    }
+    onGridColorChange(e) {
+      const color = e.target.value;
+      if (this.gridHelper) {
+        this.gridHelper.material.color.set(color);
+        this.gridHelper.material.opacity = 1;
+      }
+    }
+    resetGridColor() {
+      const defaultColor = "#969fbf";
+      this.$gridColorPicker.value = defaultColor;
+      if (this.gridHelper) {
+        this.gridHelper.material.color.set(defaultColor);
+        this.gridHelper.material.opacity = 1;
+      }
+    }
+    onGridSizeChange(e) {
+      const size = parseInt(e.target.value);
+      this.$gridSizeValue.textContent = size;
+      this.updateGrid(size, parseInt(this.$gridDivisionsSlider.value));
+    }
+    resetGridSize() {
+      const defaultSize = 15;
+      this.$gridSizeSlider.value = defaultSize;
+      this.$gridSizeValue.textContent = defaultSize;
+      this.updateGrid(defaultSize, parseInt(this.$gridDivisionsSlider.value));
+    }
+    onGridDivisionsChange(e) {
+      const divisions = parseInt(e.target.value);
+      this.$gridDivisionsValue.textContent = divisions;
+      this.updateGrid(parseInt(this.$gridSizeSlider.value), divisions);
+    }
+    resetGridDivisions() {
+      const defaultDivisions = 10;
+      this.$gridDivisionsSlider.value = defaultDivisions;
+      this.$gridDivisionsValue.textContent = defaultDivisions;
+      this.updateGrid(parseInt(this.$gridSizeSlider.value), defaultDivisions);
+    }
+    updateGrid(size, divisions) {
+      if (this.gridHelper) {
+        this.scene.remove(this.gridHelper);
+        this.gridHelper.geometry.dispose();
+        this.gridHelper.material.dispose();
+      }
+      const gridColor = this.$gridColorPicker.value;
+      this.gridHelper = new GridHelper(size, divisions, gridColor, gridColor);
+      this.gridHelper.position.y = 0;
+      this.gridHelper.position.x = 0;
+      this.gridHelper.material.opacity = 1;
+      this.gridHelper.material.transparent = true;
+      this.scene.add(this.gridHelper);
     }
     destroy() {
       window.removeEventListener("resize", this.resizeBind);
