@@ -29358,6 +29358,7 @@ void main() {
   // scripts/main.js
   var App = class {
     constructor(m) {
+      var _a2, _b2, _c, _d, _e, _f, _g, _h;
       this.$canvas = document.querySelector("canvas");
       this.$source = document.getElementById("source");
       this.$animation = document.getElementById("source-animations");
@@ -29365,8 +29366,14 @@ void main() {
       this.$export = document.getElementById("export-btn");
       this.$ui = document.getElementById("animations-ui");
       this.$transformBtns = document.querySelectorAll(".transform-btn");
+      this.$resetTransformBtn = document.querySelector(".reset-transform-btn");
+      this.$resetCameraBtn = document.querySelector(".reset-camera-btn");
       this.$inPlaceCheckbox = document.getElementById("in-place-checkbox");
       this.$filenameInput = document.getElementById("filename-input");
+      this.$animationsSearch = document.getElementById("animations-search");
+      this.$animationsCount = document.getElementById("animations-count");
+      this.draggedItem = null;
+      this.draggedIndex = null;
       this.$textureTypeBtns = document.querySelectorAll(".texture-type-btn");
       this.$shadedSection = document.getElementById("shaded-textures");
       this.$pbrSection = document.getElementById("pbr-textures");
@@ -29399,9 +29406,12 @@ void main() {
         btn.addEventListener("click", this.onTabChange.bind(this));
       });
       this.$export.addEventListener("click", this.exportGLB.bind(this));
+      this.$animationsSearch.addEventListener("input", this.onSearchAnimations.bind(this));
       this.$transformBtns.forEach((btn) => {
         btn.addEventListener("click", this.onTransformModeClick.bind(this));
       });
+      this.$resetTransformBtn.addEventListener("click", this.onResetTransform.bind(this));
+      this.$resetCameraBtn.addEventListener("click", this.onResetCamera.bind(this));
       this.$settingsBtn = document.getElementById("settings-btn");
       this.$settingsModal = document.getElementById("settings-modal");
       this.$settingsCloseBtn = document.getElementById("settings-close-btn");
@@ -29415,6 +29425,16 @@ void main() {
       this.$gridDivisionsSlider = document.getElementById("grid-divisions-slider");
       this.$gridDivisionsValue = document.getElementById("grid-divisions-value");
       this.$resetGridDivisions = document.getElementById("reset-grid-divisions");
+      this.$animationControlsBar = document.getElementById("animation-controls-bar");
+      this.$playPauseBtn = document.getElementById("play-pause-btn");
+      this.$loopBtn = document.getElementById("loop-btn");
+      this.$playIcon = (_a2 = this.$playPauseBtn) == null ? void 0 : _a2.querySelector(".play-icon");
+      this.$pauseIcon = (_b2 = this.$playPauseBtn) == null ? void 0 : _b2.querySelector(".pause-icon");
+      this.$animCurrentTime = document.getElementById("anim-current-time");
+      this.$animTotalTime = document.getElementById("anim-total-time");
+      this.$animProgressBar = document.getElementById("anim-progress-bar");
+      this.$animProgressSlider = document.getElementById("anim-progress-slider");
+      this.$animSpeedInput = document.getElementById("anim-speed-input");
       this.$settingsBtn.addEventListener("click", this.openSettings.bind(this));
       this.$settingsCloseBtn.addEventListener("click", this.closeSettings.bind(this));
       this.$settingsModal.addEventListener("click", (e) => {
@@ -29428,6 +29448,19 @@ void main() {
       this.$resetGridSize.addEventListener("click", this.resetGridSize.bind(this));
       this.$gridDivisionsSlider.addEventListener("input", this.onGridDivisionsChange.bind(this));
       this.$resetGridDivisions.addEventListener("click", this.resetGridDivisions.bind(this));
+      (_c = this.$playPauseBtn) == null ? void 0 : _c.addEventListener("click", this.togglePlayPause.bind(this));
+      (_d = this.$loopBtn) == null ? void 0 : _d.addEventListener("click", this.toggleLoop.bind(this));
+      (_e = this.$animProgressSlider) == null ? void 0 : _e.addEventListener("input", this.onProgressSliderChange.bind(this));
+      (_f = this.$animProgressSlider) == null ? void 0 : _f.addEventListener("mousedown", this.onProgressSliderMouseDown.bind(this));
+      (_g = this.$animProgressSlider) == null ? void 0 : _g.addEventListener("mouseup", this.onProgressSliderMouseUp.bind(this));
+      (_h = this.$animSpeedInput) == null ? void 0 : _h.addEventListener("input", this.onSpeedChange.bind(this));
+      this.$ui.addEventListener("dragover", this.onAnimationDragOver.bind(this));
+      this.$ui.addEventListener("dragleave", this.onAnimationDragLeave.bind(this));
+      this.$ui.addEventListener("drop", this.onAnimationDrop.bind(this));
+      this.isPlaying = false;
+      this.isLooping = true;
+      this.wasPlayingBeforeScrub = false;
+      this.animationSpeed = 1;
       this.customTexture = null;
       this.textureType = "shaded";
       this.usePackedTexture = false;
@@ -29490,8 +29523,8 @@ void main() {
       dirLight.shadow.camera.near = 0.1;
       dirLight.shadow.camera.far = 50;
       this.scene.add(dirLight);
-      this.camera = new PerspectiveCamera(30, this.sizes.width / this.sizes.height, 0.01, 100);
-      this.camera.position.set(3, 1, 3);
+      this.camera = new PerspectiveCamera(60, this.sizes.width / this.sizes.height, 0.01, 100);
+      this.camera.position.set(0, 1, 4);
       this.scene.add(this.camera);
       this.controls = new OrbitControls(this.camera, this.$canvas);
       this.controls.target.set(0, 0.75, 0);
@@ -29504,7 +29537,7 @@ void main() {
         this.controls.enabled = !event.value;
       });
       this.scene.add(this.transformControl);
-      this.scene.fog = new Fog("#15151a", 10, 30);
+      this.scene.fog = new Fog("#15151a", 50, 200);
       const pmrem = new PMREMGenerator(this.renderer);
       const envTex = pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture;
       this.scene.environment = envTex;
@@ -29536,7 +29569,11 @@ void main() {
       this.previousTime = elapsedTime;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
-      if (this.mixer) this.mixer.setTime(elapsedTime);
+      const isStaticPose = this.animation && this.animation.getClip().duration < 0.01;
+      if (this.mixer && this.isPlaying && !isStaticPose) {
+        this.mixer.update(deltaTime);
+      }
+      this.updateAnimationProgress();
       this.raf = window.requestAnimationFrame(this.render.bind(this));
     }
     onSourceChange(e) {
@@ -29545,6 +29582,8 @@ void main() {
           const file = e.currentTarget.files[0];
           const filename = file.name;
           const extension = filename.split(".").pop().toLowerCase();
+          const label = e.currentTarget.closest("label");
+          label.classList.add("loading");
           const baseFilename = filename.replace(/\.[^/.]+$/, "");
           if (this.$filenameInput && !this.$filenameInput.value) {
             this.$filenameInput.value = baseFilename;
@@ -29595,7 +29634,12 @@ void main() {
             }
             this.scene.add(this.object);
             console.log(this.object);
-            this.transformControl.attach(this.object);
+            const activeBtn = document.querySelector(".transform-btn.active");
+            const activeMode = activeBtn ? activeBtn.dataset.mode : "none";
+            if (activeMode !== "none") {
+              this.transformControl.attach(this.object);
+            }
+            label.classList.remove("loading");
             resolve();
           }, { once: true });
           reader.readAsArrayBuffer(file);
@@ -29606,6 +29650,8 @@ void main() {
       return __async(this, null, function* () {
         const files = e.currentTarget.files;
         if (!files) return;
+        const label = e.currentTarget.closest("label");
+        label.classList.add("loading");
         for (let file of files) {
           if (!this.object) {
             yield this.onSourceChange(e);
@@ -29626,7 +29672,73 @@ void main() {
             reader.readAsArrayBuffer(file);
           }
         }
+        label.classList.remove("loading");
         e.currentTarget.value = "";
+      });
+    }
+    onAnimationDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.$ui.classList.add("drag-over");
+    }
+    onAnimationDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.$ui.classList.remove("drag-over");
+    }
+    onAnimationDrop(e) {
+      return __async(this, null, function* () {
+        e.preventDefault();
+        e.stopPropagation();
+        this.$ui.classList.remove("drag-over");
+        const files = e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        const fbxFiles = Array.from(files).filter(
+          (file) => file.name.toLowerCase().endsWith(".fbx")
+        );
+        if (fbxFiles.length === 0) {
+          console.warn("No FBX files found in dropped items");
+          return;
+        }
+        this.$ui.classList.add("loading");
+        for (let file of fbxFiles) {
+          if (!this.object) {
+            const fakeEvent = {
+              currentTarget: {
+                files: [file],
+                closest: () => ({
+                  classList: {
+                    add: () => {
+                    },
+                    remove: () => {
+                    }
+                  }
+                })
+              }
+            };
+            yield this.onSourceChange(fakeEvent);
+          } else {
+            const reader = new FileReader();
+            yield new Promise((resolve) => {
+              reader.addEventListener("load", (event) => {
+                const contents = event.target.result;
+                let object = this.fbxLoader.parse(contents);
+                if (object.animations.length) {
+                  for (let animation of object.animations) {
+                    animation.name = file.name.split(".")[0];
+                    this.object.animations.push(animation);
+                  }
+                }
+                this.updateUI();
+                this.fixNonPBRMaterials();
+                resolve();
+              }, { once: true });
+              reader.readAsArrayBuffer(file);
+            });
+          }
+        }
+        this.$ui.classList.remove("loading");
+        console.log(`Loaded ${fbxFiles.length} FBX file(s) via drag and drop`);
       });
     }
     onTabChange(e) {
@@ -29641,7 +29753,7 @@ void main() {
       const activeTab = document.getElementById(`tab-${tabName}`);
       if (activeTab) {
         activeTab.classList.add("active");
-        activeTab.style.display = "block";
+        activeTab.style.display = "flex";
       }
       console.log("Tab changed to:", tabName);
     }
@@ -29651,18 +29763,23 @@ void main() {
       this.$textureTypeBtns.forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.type === type);
       });
+      const pbrModeSelector = document.getElementById("pbr-mode-selector-fixed");
       if (type === "shaded") {
         this.$shadedSection.style.display = "";
         this.$pbrSection.style.display = "none";
+        if (pbrModeSelector) pbrModeSelector.style.display = "none";
       } else {
         this.$shadedSection.style.display = "none";
         this.$pbrSection.style.display = "";
+        if (pbrModeSelector) pbrModeSelector.style.display = "";
       }
       console.log("Texture type changed to:", type);
     }
     onTextureChange(e) {
       const file = e.currentTarget.files[0];
       if (!file) return;
+      const label = e.currentTarget.closest("label");
+      label.classList.add("loading");
       const reader = new FileReader();
       reader.addEventListener("load", (event) => {
         const img = new Image();
@@ -29675,11 +29792,26 @@ void main() {
           if (this.object) {
             this.applyTextureToModel(texture);
           }
+          this.addTextureThumbnail(label, event.target.result);
+          label.classList.remove("loading");
           console.log("Shaded texture loaded and applied");
         };
         img.src = event.target.result;
       }, { once: true });
       reader.readAsDataURL(file);
+    }
+    addTextureThumbnail(label, imageSrc) {
+      const existingThumb = label.querySelector(".texture-preview");
+      if (existingThumb) existingThumb.remove();
+      const thumb = document.createElement("img");
+      thumb.className = "texture-preview";
+      thumb.src = imageSrc;
+      thumb.title = "Click to view full size";
+      thumb.addEventListener("click", () => {
+        window.open(imageSrc, "_blank");
+      });
+      label.appendChild(thumb);
+      setTimeout(() => thumb.classList.add("loaded"), 10);
     }
     onPackedModeToggle(e) {
       this.usePackedTexture = e.currentTarget.checked;
@@ -29695,6 +29827,8 @@ void main() {
     onPackedTextureChange(e) {
       const file = e.currentTarget.files[0];
       if (!file) return;
+      const label = e.currentTarget.closest("label");
+      label.classList.add("loading");
       const reader = new FileReader();
       reader.addEventListener("load", (event) => {
         const img = new Image();
@@ -29710,6 +29844,8 @@ void main() {
           if (this.object) {
             this.applyPBRTexturesToModel();
           }
+          this.addTextureThumbnail(label, event.target.result);
+          label.classList.remove("loading");
           console.log("Packed ORM texture loaded and applied");
         };
         img.src = event.target.result;
@@ -29719,6 +29855,8 @@ void main() {
     onPBRTextureChange(e, mapType) {
       const file = e.currentTarget.files[0];
       if (!file) return;
+      const label = e.currentTarget.closest("label");
+      label.classList.add("loading");
       const reader = new FileReader();
       reader.addEventListener("load", (event) => {
         const img = new Image();
@@ -29735,6 +29873,8 @@ void main() {
           if (this.object) {
             this.applyPBRTexturesToModel();
           }
+          this.addTextureThumbnail(label, event.target.result);
+          label.classList.remove("loading");
           console.log(`PBR ${mapType} loaded and applied`);
         };
         img.src = event.target.result;
@@ -29865,10 +30005,46 @@ void main() {
       }
       console.log(JSON.parse(JSON.stringify(this.object.animations)));
       if (this.object.animations.length) {
-        for (let animation of this.object.animations) {
+        for (let i = 0; i < this.object.animations.length; i++) {
+          let animation = this.object.animations[i];
           console.log(animation.name);
           let container = document.createElement("div");
           container.className = "animation-item";
+          container.draggable = true;
+          container.dataset.index = i;
+          container.addEventListener("dragstart", (e) => {
+            this.draggedItem = container;
+            this.draggedIndex = i;
+            container.classList.add("dragging");
+            e.dataTransfer.effectAllowed = "move";
+          });
+          container.addEventListener("dragend", () => {
+            container.classList.remove("dragging");
+            document.querySelectorAll(".animation-item").forEach((item) => {
+              item.classList.remove("drag-over");
+            });
+          });
+          container.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (this.draggedItem !== container) {
+              container.classList.add("drag-over");
+            }
+          });
+          container.addEventListener("dragleave", () => {
+            container.classList.remove("drag-over");
+          });
+          container.addEventListener("drop", (e) => {
+            e.preventDefault();
+            container.classList.remove("drag-over");
+            if (this.draggedItem !== container) {
+              const targetIndex = parseInt(container.dataset.index);
+              const draggedAnimation = this.object.animations[this.draggedIndex];
+              this.object.animations.splice(this.draggedIndex, 1);
+              this.object.animations.splice(targetIndex, 0, draggedAnimation);
+              this.updateUI();
+            }
+          });
           let input = document.createElement("input");
           input.type = "text";
           input.value = animation.name;
@@ -29877,12 +30053,26 @@ void main() {
               item.classList.remove("active");
             });
             container.classList.add("active");
-            if (this.animation) this.animation.stop();
+            if (this.animation) {
+              this.animation.stop();
+            }
             this.animation = this.mixer.clipAction(animation);
+            const isStaticPose = animation.duration < 0.01;
+            if (isStaticPose) {
+              this.animation.setLoop(LoopOnce);
+              this.animation.clampWhenFinished = true;
+            } else {
+              this.animation.setLoop(this.isLooping ? LoopRepeat : LoopOnce);
+            }
+            this.animation.timeScale = this.animationSpeed;
             this.animation.play();
+            this.isPlaying = true;
+            this.updatePlayPauseButton();
+            this.updateLoopButton();
           });
           input.addEventListener("change", () => {
             animation.name = input.value;
+            this.updateAnimationsCount();
           });
           let deleteBtn = document.createElement("button");
           deleteBtn.className = "delete-animation-btn";
@@ -29900,6 +30090,44 @@ void main() {
           this.$ui.appendChild(container);
         }
       }
+      this.updateAnimationsCount();
+    }
+    updateAnimationsCount() {
+      var _a2, _b2;
+      const total = ((_b2 = (_a2 = this.object) == null ? void 0 : _a2.animations) == null ? void 0 : _b2.length) || 0;
+      const visible = document.querySelectorAll(".animation-item:not(.hidden)").length;
+      if (this.$animationsSearch.value.trim()) {
+        this.$animationsCount.textContent = `${visible} of ${total} animations`;
+      } else {
+        this.$animationsCount.textContent = `${total} animation${total !== 1 ? "s" : ""}`;
+      }
+    }
+    onSearchAnimations(e) {
+      const searchTerm = e.target.value.toLowerCase().trim();
+      const items = document.querySelectorAll(".animation-item");
+      let visibleCount = 0;
+      items.forEach((item) => {
+        const input = item.querySelector('input[type="text"]');
+        const animationName = input.value.toLowerCase();
+        if (animationName.includes(searchTerm)) {
+          item.classList.remove("hidden");
+          visibleCount++;
+        } else {
+          item.classList.add("hidden");
+        }
+      });
+      let noResultsMsg = this.$ui.querySelector(".no-results-message");
+      if (searchTerm && visibleCount === 0 && items.length > 0) {
+        if (!noResultsMsg) {
+          noResultsMsg = document.createElement("div");
+          noResultsMsg.className = "no-results-message";
+          noResultsMsg.innerHTML = '\u{1F50D} No animations found<br><span style="font-size: 0.85em; opacity: 0.7;">Try a different search term</span>';
+          this.$ui.appendChild(noResultsMsg);
+        }
+      } else if (noResultsMsg) {
+        noResultsMsg.remove();
+      }
+      this.updateAnimationsCount();
     }
     onTransformModeClick(e) {
       const btn = e.currentTarget;
@@ -29914,6 +30142,23 @@ void main() {
           this.transformControl.attach(this.object);
         }
       }
+    }
+    onResetTransform() {
+      if (!this.object) return;
+      this.object.position.set(0, 0, 0);
+      this.object.rotation.set(0, 0, 0);
+      this.object.scale.set(0.01, 0.01, 0.01);
+      console.log("Model transform reset to initial state");
+    }
+    onResetCamera() {
+      this.camera.position.set(0, 1, 4);
+      this.controls.target.set(0, 0.75, 0);
+      if (this.camera.isPerspectiveCamera) {
+        this.camera.fov = 60;
+        this.camera.updateProjectionMatrix();
+      }
+      this.controls.update();
+      console.log("Camera view reset to initial state");
     }
     makeAnimationsInPlace(animations) {
       if (!animations || animations.length === 0) return animations;
@@ -29942,6 +30187,9 @@ void main() {
     exportGLB() {
       console.log("export requested");
       const gltfExporter = new GLTFExporter();
+      this.$export.classList.add("loading");
+      this.$export.disabled = true;
+      const originalText = this.$export.textContent;
       function save(blob, filename2) {
         const link = document.createElement("a");
         link.style.display = "none";
@@ -29958,7 +30206,11 @@ void main() {
         save(new Blob([buffer], { type: "application/octet-stream" }), filename2);
       }
       const target = this.object || this.scene;
-      if (!target) return;
+      if (!target) {
+        this.$export.classList.remove("loading");
+        this.$export.disabled = false;
+        return;
+      }
       let filename = this.$filenameInput.value.trim() || "model";
       filename = filename.replace(/\.(glb|gltf)$/i, "");
       let animationsToExport = target.animations || [];
@@ -29968,7 +30220,7 @@ void main() {
       }
       gltfExporter.parse(
         target,
-        function(result) {
+        (result) => {
           if (result instanceof ArrayBuffer) {
             saveArrayBuffer(result, filename + ".glb");
           } else {
@@ -29976,9 +30228,17 @@ void main() {
             console.log(output);
             saveString(output, filename + ".gltf");
           }
+          this.$export.classList.remove("loading");
+          this.$export.classList.add("success");
+          setTimeout(() => {
+            this.$export.classList.remove("success");
+            this.$export.disabled = false;
+          }, 2e3);
         },
-        function(error) {
+        (error) => {
           console.log("An error happened during parsing", error);
+          this.$export.classList.remove("loading");
+          this.$export.disabled = false;
         },
         {
           binary: true,
@@ -30057,6 +30317,121 @@ void main() {
       this.gridHelper.material.opacity = 1;
       this.gridHelper.material.transparent = true;
       this.scene.add(this.gridHelper);
+    }
+    togglePlayPause() {
+      if (!this.animation) {
+        return;
+      }
+      this.isPlaying = !this.isPlaying;
+      if (this.isPlaying) {
+        this.animation.paused = false;
+      } else {
+        this.animation.paused = true;
+      }
+      this.updatePlayPauseButton();
+    }
+    updatePlayPauseButton() {
+      if (!this.$playPauseBtn) return;
+      if (this.isPlaying) {
+        this.$playPauseBtn.classList.add("playing");
+        if (this.$playIcon) this.$playIcon.style.display = "none";
+        if (this.$pauseIcon) this.$pauseIcon.style.display = "block";
+      } else {
+        this.$playPauseBtn.classList.remove("playing");
+        if (this.$playIcon) this.$playIcon.style.display = "block";
+        if (this.$pauseIcon) this.$pauseIcon.style.display = "none";
+      }
+    }
+    toggleLoop() {
+      this.isLooping = !this.isLooping;
+      this.updateLoopButton();
+      if (this.animation) {
+        this.animation.setLoop(this.isLooping ? LoopRepeat : LoopOnce);
+        if (!this.isLooping && this.animation.time >= this.animation.getClip().duration) {
+          this.animation.reset();
+        }
+      }
+      this.updateLoopButton();
+    }
+    updateLoopButton() {
+      if (!this.$loopBtn) return;
+      if (this.isLooping) {
+        this.$loopBtn.classList.add("active");
+      } else {
+        this.$loopBtn.classList.remove("active");
+      }
+    }
+    updateAnimationProgress() {
+      if (!this.$animCurrentTime || !this.$animTotalTime) return;
+      if (!this.animation) {
+        this.$animCurrentTime.textContent = "0";
+        this.$animTotalTime.textContent = "0";
+        if (this.$animProgressBar) {
+          this.$animProgressBar.style.width = "0%";
+        }
+        if (this.$animProgressSlider) {
+          this.$animProgressSlider.value = 0;
+        }
+        return;
+      }
+      const currentTime = this.animation.time;
+      const duration = this.animation.getClip().duration;
+      const isStaticPose = duration < 0.01;
+      let progress = 0;
+      if (isStaticPose) {
+        progress = 100;
+      } else {
+        progress = currentTime / duration * 100;
+      }
+      this.$animCurrentTime.textContent = Math.floor(currentTime);
+      this.$animTotalTime.textContent = Math.floor(duration);
+      if (this.$animProgressBar) {
+        this.$animProgressBar.style.width = `${Math.min(progress, 100)}%`;
+      }
+      if (this.$animProgressSlider && !this.wasPlayingBeforeScrub) {
+        this.$animProgressSlider.value = progress;
+      }
+      if (!isStaticPose && !this.isLooping && currentTime >= duration - 0.1) {
+        if (this.isPlaying) {
+          this.isPlaying = false;
+          this.updatePlayPauseButton();
+          this.animation.time = 0;
+          this.mixer.setTime(0);
+        }
+      }
+    }
+    onProgressSliderChange(e) {
+      if (!this.animation) {
+        e.target.value = 0;
+        return;
+      }
+      const progress = parseFloat(e.target.value);
+      const duration = this.animation.getClip().duration;
+      const newTime = progress / 100 * duration;
+      this.animation.time = newTime;
+      this.mixer.setTime(newTime);
+    }
+    onProgressSliderMouseDown() {
+      this.wasPlayingBeforeScrub = this.isPlaying;
+      if (this.isPlaying) {
+        this.isPlaying = false;
+      }
+    }
+    onProgressSliderMouseUp() {
+      if (this.wasPlayingBeforeScrub) {
+        this.isPlaying = true;
+      }
+      this.wasPlayingBeforeScrub = false;
+    }
+    onSpeedChange(e) {
+      let speed = parseFloat(e.target.value);
+      if (speed < 0.1) speed = 0.1;
+      if (speed > 5) speed = 5;
+      this.animationSpeed = speed;
+      e.target.value = speed.toFixed(1);
+      if (this.animation) {
+        this.animation.timeScale = speed;
+      }
     }
     destroy() {
       window.removeEventListener("resize", this.resizeBind);

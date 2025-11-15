@@ -16,8 +16,18 @@ class App {
         this.$export = document.getElementById('export-btn')
         this.$ui = document.getElementById('animations-ui')
         this.$transformBtns = document.querySelectorAll('.transform-btn')
+        this.$resetTransformBtn = document.querySelector('.reset-transform-btn')
+        this.$resetCameraBtn = document.querySelector('.reset-camera-btn')
         this.$inPlaceCheckbox = document.getElementById('in-place-checkbox')
         this.$filenameInput = document.getElementById('filename-input')
+        
+        // Search and filter elements
+        this.$animationsSearch = document.getElementById('animations-search')
+        this.$animationsCount = document.getElementById('animations-count')
+        
+        // Drag and drop state
+        this.draggedItem = null
+        this.draggedIndex = null
 
         // Texture type elements
         this.$textureTypeBtns = document.querySelectorAll('.texture-type-btn')
@@ -68,10 +78,19 @@ class App {
 
         this.$export.addEventListener('click', this.exportGLB.bind(this))
         
+        // Search animations
+        this.$animationsSearch.addEventListener('input', this.onSearchAnimations.bind(this))
+        
         // Transform mode buttons
         this.$transformBtns.forEach(btn => {
             btn.addEventListener('click', this.onTransformModeClick.bind(this))
         })
+        
+        // Reset transform button
+        this.$resetTransformBtn.addEventListener('click', this.onResetTransform.bind(this))
+        
+        // Reset camera button
+        this.$resetCameraBtn.addEventListener('click', this.onResetCamera.bind(this))
         
         // Settings modal elements
         this.$settingsBtn = document.getElementById('settings-btn')
@@ -88,6 +107,18 @@ class App {
         this.$gridDivisionsValue = document.getElementById('grid-divisions-value')
         this.$resetGridDivisions = document.getElementById('reset-grid-divisions')
         
+        // Animation controls elements
+        this.$animationControlsBar = document.getElementById('animation-controls-bar')
+        this.$playPauseBtn = document.getElementById('play-pause-btn')
+        this.$loopBtn = document.getElementById('loop-btn')
+        this.$playIcon = this.$playPauseBtn?.querySelector('.play-icon')
+        this.$pauseIcon = this.$playPauseBtn?.querySelector('.pause-icon')
+        this.$animCurrentTime = document.getElementById('anim-current-time')
+        this.$animTotalTime = document.getElementById('anim-total-time')
+        this.$animProgressBar = document.getElementById('anim-progress-bar')
+        this.$animProgressSlider = document.getElementById('anim-progress-slider')
+        this.$animSpeedInput = document.getElementById('anim-speed-input')
+        
         // Settings events
         this.$settingsBtn.addEventListener('click', this.openSettings.bind(this))
         this.$settingsCloseBtn.addEventListener('click', this.closeSettings.bind(this))
@@ -103,6 +134,23 @@ class App {
         this.$gridDivisionsSlider.addEventListener('input', this.onGridDivisionsChange.bind(this))
         this.$resetGridDivisions.addEventListener('click', this.resetGridDivisions.bind(this))
         
+        // Animation controls events
+        this.$playPauseBtn?.addEventListener('click', this.togglePlayPause.bind(this))
+        this.$loopBtn?.addEventListener('click', this.toggleLoop.bind(this))
+        this.$animProgressSlider?.addEventListener('input', this.onProgressSliderChange.bind(this))
+        this.$animProgressSlider?.addEventListener('mousedown', this.onProgressSliderMouseDown.bind(this))
+        this.$animProgressSlider?.addEventListener('mouseup', this.onProgressSliderMouseUp.bind(this))
+        this.$animSpeedInput?.addEventListener('input', this.onSpeedChange.bind(this))
+        
+        // Drag and drop for animations list
+        this.$ui.addEventListener('dragover', this.onAnimationDragOver.bind(this))
+        this.$ui.addEventListener('dragleave', this.onAnimationDragLeave.bind(this))
+        this.$ui.addEventListener('drop', this.onAnimationDrop.bind(this))
+        
+        this.isPlaying = false
+        this.isLooping = true
+        this.wasPlayingBeforeScrub = false
+        this.animationSpeed = 1.0
         this.customTexture = null;
         this.textureType = 'shaded'; // 'shaded' or 'pbr'
         this.usePackedTexture = false;
@@ -180,8 +228,8 @@ class App {
         this.scene.add(dirLight)
 
         // Base camera
-        this.camera = new THREE.PerspectiveCamera(30, this.sizes.width / this.sizes.height, 0.01,100)
-        this.camera.position.set(3,1,3)
+        this.camera = new THREE.PerspectiveCamera(60, this.sizes.width / this.sizes.height, 0.01,100)
+        this.camera.position.set(0, 1, 4)
         this.scene.add(this.camera)
 
         // Controls
@@ -200,7 +248,8 @@ class App {
         } );
         this.scene.add(this.transformControl)
 
-        this.scene.fog = new THREE.Fog("#15151a", 10, 30);
+        // Increased fog distance for better visibility when zoomed out
+        this.scene.fog = new THREE.Fog("#15151a", 50, 200);
 
         const pmrem = new THREE.PMREMGenerator(this.renderer)
         const envTex = pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture
@@ -248,7 +297,16 @@ class App {
         // Render
         this.renderer.render(this.scene, this.camera)
 
-        if(this.mixer) this.mixer.setTime(elapsedTime)
+        // Check if current animation is a static pose
+        const isStaticPose = this.animation && this.animation.getClip().duration < 0.01;
+
+        // Update mixer only if playing and not a static pose
+        if(this.mixer && this.isPlaying && !isStaticPose) {
+            this.mixer.update(deltaTime)
+        }
+        
+        // Update animation progress display
+        this.updateAnimationProgress()
 
         // Call tick again on the next frame
         this.raf = window.requestAnimationFrame(this.render.bind(this))
@@ -260,6 +318,10 @@ class App {
 
             const filename = file.name;
             const extension = filename.split( '.' ).pop().toLowerCase();
+            
+            // Add loading state
+            const label = e.currentTarget.closest('label');
+            label.classList.add('loading');
             
             // Auto-set filename from source file (without extension)
             const baseFilename = filename.replace(/\.[^/.]+$/, '');
@@ -322,7 +384,15 @@ class App {
 
                 console.log(this.object); 
 
-                this.transformControl.attach(this.object)
+                // Only attach transform control if not in 'none' mode
+                const activeBtn = document.querySelector('.transform-btn.active');
+                const activeMode = activeBtn ? activeBtn.dataset.mode : 'none';
+                if(activeMode !== 'none') {
+                    this.transformControl.attach(this.object);
+                }
+                
+                // Remove loading state
+                label.classList.remove('loading');
 
                 resolve()
 
@@ -335,6 +405,9 @@ class App {
         const files = e.currentTarget.files;        
 
         if(!files) return;
+
+        const label = e.currentTarget.closest('label');
+        label.classList.add('loading');
 
         for(let file of files) {
             if(!this.object) {
@@ -360,7 +433,86 @@ class App {
             }        
         }
 
+        label.classList.remove('loading');
         e.currentTarget.value = ''
+    }
+
+    onAnimationDragOver(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.$ui.classList.add('drag-over');
+    }
+
+    onAnimationDragLeave(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.$ui.classList.remove('drag-over');
+    }
+
+    async onAnimationDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.$ui.classList.remove('drag-over');
+
+        const files = e.dataTransfer.files;
+        if(!files || files.length === 0) return;
+
+        // Filter only FBX files
+        const fbxFiles = Array.from(files).filter(file => 
+            file.name.toLowerCase().endsWith('.fbx')
+        );
+
+        if(fbxFiles.length === 0) {
+            console.warn('No FBX files found in dropped items');
+            return;
+        }
+
+        // Show loading state
+        this.$ui.classList.add('loading');
+
+        for(let file of fbxFiles) {
+            if(!this.object) {
+                // If no source model, load first file as source
+                const fakeEvent = {
+                    currentTarget: {
+                        files: [file],
+                        closest: () => ({ 
+                            classList: { 
+                                add: () => {}, 
+                                remove: () => {} 
+                            } 
+                        })
+                    }
+                };
+                await this.onSourceChange(fakeEvent);
+            } else {
+                // Load as animation
+                const reader = new FileReader();
+                await new Promise((resolve) => {
+                    reader.addEventListener('load', (event) => {
+                        const contents = event.target.result;
+                        let object = this.fbxLoader.parse(contents);
+
+                        if(object.animations.length) {
+                            for(let animation of object.animations) {
+                                animation.name = file.name.split('.')[0];
+                                this.object.animations.push(animation);
+                            }
+                        }
+
+                        this.updateUI();
+                        this.fixNonPBRMaterials();
+                        resolve();
+                    }, { once: true });
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+        }
+
+        // Remove loading state
+        this.$ui.classList.remove('loading');
+        
+        console.log(`Loaded ${fbxFiles.length} FBX file(s) via drag and drop`);
     }
 
     onTabChange(e) {
@@ -380,7 +532,7 @@ class App {
         const activeTab = document.getElementById(`tab-${tabName}`);
         if(activeTab) {
             activeTab.classList.add('active');
-            activeTab.style.display = 'block';
+            activeTab.style.display = 'flex';
         }
         
         console.log('Tab changed to:', tabName);
@@ -395,13 +547,18 @@ class App {
             btn.classList.toggle('active', btn.dataset.type === type);
         });
         
+        // Toggle packed mode selector visibility
+        const pbrModeSelector = document.getElementById('pbr-mode-selector-fixed');
+        
         // Toggle sections
         if(type === 'shaded') {
             this.$shadedSection.style.display = '';
             this.$pbrSection.style.display = 'none';
+            if(pbrModeSelector) pbrModeSelector.style.display = 'none';
         } else {
             this.$shadedSection.style.display = 'none';
             this.$pbrSection.style.display = '';
+            if(pbrModeSelector) pbrModeSelector.style.display = '';
         }
         
         console.log('Texture type changed to:', type);
@@ -410,6 +567,9 @@ class App {
     onTextureChange(e) {
         const file = e.currentTarget.files[0];
         if(!file) return;
+
+        const label = e.currentTarget.closest('label');
+        label.classList.add('loading');
 
         const reader = new FileReader();
         reader.addEventListener('load', (event) => {
@@ -426,11 +586,35 @@ class App {
                     this.applyTextureToModel(texture);
                 }
                 
+                // Add thumbnail preview
+                this.addTextureThumbnail(label, event.target.result);
+                
+                label.classList.remove('loading');
                 console.log('Shaded texture loaded and applied');
             };
             img.src = event.target.result;
         }, { once: true });
         reader.readAsDataURL(file);
+    }
+    
+    addTextureThumbnail(label, imageSrc) {
+        // Remove existing thumbnail if any
+        const existingThumb = label.querySelector('.texture-preview');
+        if(existingThumb) existingThumb.remove();
+        
+        // Create new thumbnail
+        const thumb = document.createElement('img');
+        thumb.className = 'texture-preview';
+        thumb.src = imageSrc;
+        thumb.title = 'Click to view full size';
+        thumb.addEventListener('click', () => {
+            window.open(imageSrc, '_blank');
+        });
+        
+        label.appendChild(thumb);
+        
+        // Trigger animation
+        setTimeout(() => thumb.classList.add('loaded'), 10);
     }
 
     onPackedModeToggle(e) {
@@ -450,6 +634,9 @@ class App {
     onPackedTextureChange(e) {
         const file = e.currentTarget.files[0];
         if(!file) return;
+
+        const label = e.currentTarget.closest('label');
+        label.classList.add('loading');
 
         const reader = new FileReader();
         reader.addEventListener('load', (event) => {
@@ -471,6 +658,10 @@ class App {
                     this.applyPBRTexturesToModel();
                 }
                 
+                // Add thumbnail preview
+                this.addTextureThumbnail(label, event.target.result);
+                
+                label.classList.remove('loading');
                 console.log('Packed ORM texture loaded and applied');
             };
             img.src = event.target.result;
@@ -481,6 +672,9 @@ class App {
     onPBRTextureChange(e, mapType) {
         const file = e.currentTarget.files[0];
         if(!file) return;
+
+        const label = e.currentTarget.closest('label');
+        label.classList.add('loading');
 
         const reader = new FileReader();
         reader.addEventListener('load', (event) => {
@@ -504,6 +698,10 @@ class App {
                     this.applyPBRTexturesToModel();
                 }
                 
+                // Add thumbnail preview
+                this.addTextureThumbnail(label, event.target.result);
+                
+                label.classList.remove('loading');
                 console.log(`PBR ${mapType} loaded and applied`);
             };
             img.src = event.target.result;
@@ -654,12 +852,56 @@ class App {
 
         console.log(JSON.parse(JSON.stringify(this.object.animations)));
         if(this.object.animations.length) {
-            for(let animation of this.object.animations) {
+            for(let i = 0; i < this.object.animations.length; i++) {
+                let animation = this.object.animations[i];
                 console.log(animation.name);
                 
                 // Create container for animation item
                 let container = document.createElement('div')
                 container.className = 'animation-item'
+                container.draggable = true
+                container.dataset.index = i
+                
+                // Drag and drop events
+                container.addEventListener('dragstart', (e) => {
+                    this.draggedItem = container
+                    this.draggedIndex = i
+                    container.classList.add('dragging')
+                    e.dataTransfer.effectAllowed = 'move'
+                })
+                
+                container.addEventListener('dragend', () => {
+                    container.classList.remove('dragging')
+                    document.querySelectorAll('.animation-item').forEach(item => {
+                        item.classList.remove('drag-over')
+                    })
+                })
+                
+                container.addEventListener('dragover', (e) => {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if(this.draggedItem !== container) {
+                        container.classList.add('drag-over')
+                    }
+                })
+                
+                container.addEventListener('dragleave', () => {
+                    container.classList.remove('drag-over')
+                })
+                
+                container.addEventListener('drop', (e) => {
+                    e.preventDefault()
+                    container.classList.remove('drag-over')
+                    
+                    if(this.draggedItem !== container) {
+                        const targetIndex = parseInt(container.dataset.index)
+                        // Reorder animations array
+                        const draggedAnimation = this.object.animations[this.draggedIndex]
+                        this.object.animations.splice(this.draggedIndex, 1)
+                        this.object.animations.splice(targetIndex, 0, draggedAnimation)
+                        this.updateUI()
+                    }
+                })
                 
                 // Create input for animation name
                 let input = document.createElement('input')
@@ -674,13 +916,36 @@ class App {
                     container.classList.add('active');
                     
                     // Stop previous animation if any
-                    if(this.animation) this.animation.stop();
+                    if(this.animation) {
+                        this.animation.stop();
+                    }
+                    
                     // Play new animation
                     this.animation = this.mixer.clipAction(animation);
-                    this.animation.play()
+                    
+                    // Check if this is a static pose
+                    const isStaticPose = animation.duration < 0.01;
+                    
+                    if(isStaticPose) {
+                        // For static poses, set to LoopOnce and clamp when finished
+                        this.animation.setLoop(THREE.LoopOnce);
+                        this.animation.clampWhenFinished = true;
+                    } else {
+                        this.animation.setLoop(this.isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+                    }
+                    
+                    // Set animation speed
+                    this.animation.timeScale = this.animationSpeed;
+                    this.animation.play();
+                    
+                    // Update play/pause state
+                    this.isPlaying = true;
+                    this.updatePlayPauseButton();
+                    this.updateLoopButton();
                 })
                 input.addEventListener('change', () => {
                     animation.name = input.value
+                    this.updateAnimationsCount()
                 })
                 
                 // Create delete button
@@ -701,6 +966,53 @@ class App {
                 this.$ui.appendChild(container)
             }
         }
+        
+        // Update animations count
+        this.updateAnimationsCount()
+    }
+    
+    updateAnimationsCount() {
+        const total = this.object?.animations?.length || 0
+        const visible = document.querySelectorAll('.animation-item:not(.hidden)').length
+        
+        if(this.$animationsSearch.value.trim()) {
+            this.$animationsCount.textContent = `${visible} of ${total} animations`
+        } else {
+            this.$animationsCount.textContent = `${total} animation${total !== 1 ? 's' : ''}`
+        }
+    }
+    
+    onSearchAnimations(e) {
+        const searchTerm = e.target.value.toLowerCase().trim()
+        const items = document.querySelectorAll('.animation-item')
+        let visibleCount = 0
+        
+        items.forEach(item => {
+            const input = item.querySelector('input[type="text"]')
+            const animationName = input.value.toLowerCase()
+            
+            if(animationName.includes(searchTerm)) {
+                item.classList.remove('hidden')
+                visibleCount++
+            } else {
+                item.classList.add('hidden')
+            }
+        })
+        
+        // Show/hide "no results" message
+        let noResultsMsg = this.$ui.querySelector('.no-results-message')
+        if(searchTerm && visibleCount === 0 && items.length > 0) {
+            if(!noResultsMsg) {
+                noResultsMsg = document.createElement('div')
+                noResultsMsg.className = 'no-results-message'
+                noResultsMsg.innerHTML = '🔍 No animations found<br><span style="font-size: 0.85em; opacity: 0.7;">Try a different search term</span>'
+                this.$ui.appendChild(noResultsMsg)
+            }
+        } else if(noResultsMsg) {
+            noResultsMsg.remove()
+        }
+        
+        this.updateAnimationsCount()
     }
 
     onTransformModeClick(e) {
@@ -722,6 +1034,36 @@ class App {
                 this.transformControl.attach(this.object);
             }
         }
+    }
+
+    onResetTransform() {
+        if(!this.object) return;
+        
+        // Reset position, rotation, and scale to initial values
+        this.object.position.set(0, 0, 0);
+        this.object.rotation.set(0, 0, 0);
+        this.object.scale.set(0.01, 0.01, 0.01);
+        
+        console.log('Model transform reset to initial state');
+    }
+
+    onResetCamera() {
+        // Reset camera position to initial values
+        this.camera.position.set(0, 1, 4);
+        
+        // Reset controls target
+        this.controls.target.set(0, 0.75, 0);
+        
+        // Reset zoom (for orthographic cameras) or FOV (for perspective cameras)
+        if(this.camera.isPerspectiveCamera) {
+            this.camera.fov = 60;
+            this.camera.updateProjectionMatrix();
+        }
+        
+        // Update controls
+        this.controls.update();
+        
+        console.log('Camera view reset to initial state');
     }
 
     makeAnimationsInPlace(animations) {
@@ -768,6 +1110,11 @@ class App {
         console.log('export requested');
 
         const gltfExporter = new GLTFExporter();
+        
+        // Add loading state
+        this.$export.classList.add('loading');
+        this.$export.disabled = true;
+        const originalText = this.$export.textContent;
 
         function save( blob, filename ) {
             const link = document.createElement( 'a' );
@@ -788,7 +1135,11 @@ class App {
         }
 
         const target = this.object || this.scene
-        if(!target) return
+        if(!target) {
+            this.$export.classList.remove('loading');
+            this.$export.disabled = false;
+            return;
+        }
 
         // Get custom filename or use default
         let filename = this.$filenameInput.value.trim() || 'model';
@@ -804,7 +1155,7 @@ class App {
 
         gltfExporter.parse(
             target,
-            function ( result ) {
+            ( result ) => {
 
                 if ( result instanceof ArrayBuffer ) {
 
@@ -817,11 +1168,25 @@ class App {
                     saveString( output, filename + '.gltf' );
 
                 }
+                
+                // Show success state
+                this.$export.classList.remove('loading');
+                this.$export.classList.add('success');
+                
+                // Reset after animation
+                setTimeout(() => {
+                    this.$export.classList.remove('success');
+                    this.$export.disabled = false;
+                }, 2000);
 
             },
-            function ( error ) {
+            ( error ) => {
 
                 console.log( 'An error happened during parsing', error );
+                
+                // Remove loading state on error
+                this.$export.classList.remove('loading');
+                this.$export.disabled = false;
 
             },
             {
@@ -916,6 +1281,164 @@ class App {
         this.gridHelper.material.opacity = 1;
         this.gridHelper.material.transparent = true;
         this.scene.add(this.gridHelper);
+    }
+    
+    togglePlayPause() {
+        if(!this.animation) {
+            // If no animation selected, do nothing but keep button responsive
+            return;
+        }
+        
+        this.isPlaying = !this.isPlaying;
+        
+        if(this.isPlaying) {
+            this.animation.paused = false;
+        } else {
+            this.animation.paused = true;
+        }
+        
+        this.updatePlayPauseButton();
+    }
+    
+    updatePlayPauseButton() {
+        if(!this.$playPauseBtn) return;
+        
+        if(this.isPlaying) {
+            this.$playPauseBtn.classList.add('playing');
+            if(this.$playIcon) this.$playIcon.style.display = 'none';
+            if(this.$pauseIcon) this.$pauseIcon.style.display = 'block';
+        } else {
+            this.$playPauseBtn.classList.remove('playing');
+            if(this.$playIcon) this.$playIcon.style.display = 'block';
+            if(this.$pauseIcon) this.$pauseIcon.style.display = 'none';
+        }
+    }
+    
+    toggleLoop() {
+        this.isLooping = !this.isLooping;
+        this.updateLoopButton();
+        
+        if(this.animation) {
+            this.animation.setLoop(this.isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+            
+            // If loop is disabled and animation finished, reset it
+            if(!this.isLooping && this.animation.time >= this.animation.getClip().duration) {
+                this.animation.reset();
+            }
+        }
+        
+        this.updateLoopButton();
+    }
+    
+    updateLoopButton() {
+        if(!this.$loopBtn) return;
+        
+        if(this.isLooping) {
+            this.$loopBtn.classList.add('active');
+        } else {
+            this.$loopBtn.classList.remove('active');
+        }
+    }
+    
+    updateAnimationProgress() {
+        if(!this.$animCurrentTime || !this.$animTotalTime) return;
+        
+        // If no animation, show 0/0
+        if(!this.animation) {
+            this.$animCurrentTime.textContent = '0';
+            this.$animTotalTime.textContent = '0';
+            if(this.$animProgressBar) {
+                this.$animProgressBar.style.width = '0%';
+            }
+            if(this.$animProgressSlider) {
+                this.$animProgressSlider.value = 0;
+            }
+            return;
+        }
+        
+        const currentTime = this.animation.time;
+        const duration = this.animation.getClip().duration;
+        
+        // Check if this is a static pose (duration is 0 or very small)
+        const isStaticPose = duration < 0.01;
+        
+        let progress = 0;
+        if(isStaticPose) {
+            // For static poses, show as complete (100%)
+            progress = 100;
+        } else {
+            progress = (currentTime / duration) * 100;
+        }
+        
+        // Update time display
+        this.$animCurrentTime.textContent = Math.floor(currentTime);
+        this.$animTotalTime.textContent = Math.floor(duration);
+        
+        // Update progress bar
+        if(this.$animProgressBar) {
+            this.$animProgressBar.style.width = `${Math.min(progress, 100)}%`;
+        }
+        
+        // Update slider (only if not being dragged)
+        if(this.$animProgressSlider && !this.wasPlayingBeforeScrub) {
+            this.$animProgressSlider.value = progress;
+        }
+        
+        // Check if animation finished and loop is disabled (skip for static poses)
+        if(!isStaticPose && !this.isLooping && currentTime >= duration - 0.1) {
+            if(this.isPlaying) {
+                this.isPlaying = false;
+                this.updatePlayPauseButton();
+                // Reset animation to start
+                this.animation.time = 0;
+                this.mixer.setTime(0);
+            }
+        }
+    }
+    
+    onProgressSliderChange(e) {
+        if(!this.animation) {
+            // Reset slider if no animation
+            e.target.value = 0;
+            return;
+        }
+        
+        const progress = parseFloat(e.target.value);
+        const duration = this.animation.getClip().duration;
+        const newTime = (progress / 100) * duration;
+        
+        this.animation.time = newTime;
+        this.mixer.setTime(newTime);
+    }
+    
+    onProgressSliderMouseDown() {
+        this.wasPlayingBeforeScrub = this.isPlaying;
+        if(this.isPlaying) {
+            this.isPlaying = false;
+        }
+    }
+    
+    onProgressSliderMouseUp() {
+        if(this.wasPlayingBeforeScrub) {
+            this.isPlaying = true;
+        }
+        this.wasPlayingBeforeScrub = false;
+    }
+    
+    onSpeedChange(e) {
+        let speed = parseFloat(e.target.value);
+        
+        // Clamp speed between 0.1 and 5
+        if(speed < 0.1) speed = 0.1;
+        if(speed > 5) speed = 5;
+        
+        this.animationSpeed = speed;
+        e.target.value = speed.toFixed(1);
+        
+        // Update animation speed if animation is active
+        if(this.animation) {
+            this.animation.timeScale = speed;
+        }
     }
     
     destroy() {

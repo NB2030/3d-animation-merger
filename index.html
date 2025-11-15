@@ -13,12 +13,12 @@
 	    	<div class="viewer" id="viewer">
 	    		<div class="viewer_ui">
 	    		    <div class="transform-toolbar">
-	    		        <button class="transform-btn" data-mode="none" title="Select (Hide Gizmo)">
+	    		        <button class="transform-btn active" data-mode="none" title="Select (Hide Gizmo)">
 	    		            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 	    		                <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
 	    		            </svg>
 	    		        </button>
-	    		        <button class="transform-btn active" data-mode="translate" title="Translate (Move)">
+	    		        <button class="transform-btn" data-mode="translate" title="Translate (Move)">
 	    		            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 	    		                <polyline points="5 9 2 12 5 15"></polyline>
 	    		                <polyline points="9 5 12 2 15 5"></polyline>
@@ -38,16 +38,82 @@
 	    		                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
 	    		            </svg>
 	    		        </button>
+	    		        <div class="toolbar-divider"></div>
+	    		        <button class="reset-transform-btn" title="Reset Model Transform">
+	    		            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+	    		                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+	    		                <path d="M3 3v5h5"/>
+	    		            </svg>
+	    		        </button>
+	    		        <button class="reset-camera-btn" title="Reset Camera View">
+	    		            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+	    		                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+	    		                <circle cx="12" cy="13" r="4"/>
+	    		            </svg>
+	    		        </button>
 	    		    </div>
 	    		</div>
+	    		
+	    		<!-- Animation Controls Bar -->
+	    		<div class="animation-controls-bar" id="animation-controls-bar">
+	    		    <button class="anim-control-btn" id="play-pause-btn" title="Play/Pause">
+	    		        <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
+	    		            <path d="M8 5v14l11-7z"/>
+	    		        </svg>
+	    		        <svg class="pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+	    		            <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
+	    		        </svg>
+	    		    </button>
+	    		    
+	    		    <div class="anim-time-display">
+	    		        <span class="anim-current-time" id="anim-current-time">0</span>
+	    		        <span class="anim-time-separator">/</span>
+	    		        <span class="anim-total-time" id="anim-total-time">0</span>
+	    		    </div>
+	    		    
+	    		    <div class="anim-progress-container" id="anim-progress-container">
+	    		        <div class="anim-progress-bar" id="anim-progress-bar"></div>
+	    		        <input type="range" class="anim-progress-slider" id="anim-progress-slider" min="0" max="100" value="0" step="0.1" />
+	    		    </div>
+	    		    
+	    		    <div class="anim-speed-control" title="Animation Speed (Preview Only)">
+	    		        <input type="number" class="anim-speed-input" id="anim-speed-input" min="0.1" max="5" step="0.1" value="1.0" />
+	    		        <span class="anim-speed-unit">x</span>
+	    		    </div>
+	    		    
+	    		    <button class="anim-loop-btn" id="loop-btn" title="Toggle Loop">
+	    		        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+	    		            <path d="M17 1l4 4-4 4"/>
+	    		            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+	    		            <path d="M7 23l-4-4 4-4"/>
+	    		            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+	    		        </svg>
+	    		    </button>
+	    		</div>
+	    		
 	    		<canvas></canvas>
 	    	</div>
 
 	    	<aside class="aside">
-		        <!-- Tabs Navigation -->
-		        <div class="tabs-nav">
-		            <button class="tab-btn active" data-tab="general">General</button>
-		            <button class="tab-btn" data-tab="textures">Textures</button>
+		        <div class="aside-header">
+		            <!-- Tabs Navigation -->
+		            <div class="tabs-nav">
+		                <button class="tab-btn active" data-tab="general">
+		                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.4em;">
+		                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+		                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+		                    </svg>
+		                    General
+		                </button>
+		                <button class="tab-btn" data-tab="textures">
+		                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.4em;">
+		                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+		                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+		                        <polyline points="21 15 16 10 5 21"></polyline>
+		                    </svg>
+		                    Textures
+		                </button>
+		            </div>
 		        </div>
 		        
 		        <!-- General Tab -->
@@ -63,19 +129,33 @@
 		                    <input id="source-animations" type="file" accept=".fbx" multiple />
 		                </label>
 		            </div>
+		            
+		            <div class="animations-search-container">
+		                <input type="text" id="animations-search" placeholder="Search animations..." />
+		                <span class="animations-count" id="animations-count">0 animations</span>
+		            </div>
+		            
+		            <div class="animations" id="animations-ui"></div>
 		        </div>
 		        
 		        <!-- Textures Tab -->
 		        <div class="tab-content" id="tab-textures" style="display: none;">
-		            <div class="files">
-		                <div class="texture-type-selector">
-		                    <span class="texture-type-label">Texture Type:</span>
-		                    <div class="texture-type-buttons">
-		                        <button class="texture-type-btn active" data-type="shaded">Shaded</button>
-		                        <button class="texture-type-btn" data-type="pbr">PBR</button>
-		                    </div>
+		            <div class="texture-type-selector">
+		                <span class="texture-type-label">Texture Type:</span>
+		                <div class="texture-type-buttons">
+		                    <button class="texture-type-btn active" data-type="shaded" data-tooltip="Simple UV texture mapping">Shaded</button>
+		                    <button class="texture-type-btn" data-type="pbr" data-tooltip="Physically Based Rendering">PBR</button>
 		                </div>
-		                
+		            </div>
+		            
+		            <div class="pbr-mode-selector" id="pbr-mode-selector-fixed" style="display: none;">
+		                <label class="checkbox-label" data-tooltip="R=AO, G=Roughness, B=Metallic">
+		                    <input type="checkbox" id="use-packed-texture" />
+		                    <span>Use Packed/Surface Texture (ORM)</span>
+		                </label>
+		            </div>
+		            
+		            <div class="texture-content">
 		                <div id="shaded-textures" class="texture-section">
 		                    <label for="">
 		                        <span>UV Texture Map (PNG)</span>
@@ -84,12 +164,6 @@
 		                </div>
 		                
 		                <div id="pbr-textures" class="texture-section" style="display: none;">
-		                    <div class="pbr-mode-selector">
-		                        <label class="checkbox-label">
-		                            <input type="checkbox" id="use-packed-texture" />
-		                            <span>Use Packed/Surface Texture (ORM)</span>
-		                        </label>
-		                    </div>
 		                    
 		                    <label for="">
 		                        <span>Base Color (Albedo)</span>
@@ -129,24 +203,29 @@
 		                </div>
 		            </div>
 		        </div>
-
-		        <div class="animations" id="animations-ui"></div>
 		        
-		        <div class="export-settings">
-		            <label for="filename-input">
-		                <span>Export Filename</span>
-		                <input type="text" id="filename-input" placeholder="model" />
-		            </label>
-		        </div>
-		        
-		        <div class="options">
-		            <label class="checkbox-label">
-		                <input type="checkbox" id="in-place-checkbox" />
-		                <span>In Place (Remove root motion)</span>
-		            </label>
-		            <button class="settings-btn" id="settings-btn" title="Settings">
-		                <img src="assets/settings-icon.svg" alt="Settings" width="20" height="20" />
-		            </button>
+		        <div class="aside-footer">
+		            <div class="export-settings">
+		                <label for="filename-input">
+		                    <span>Export Filename</span>
+		                    <input type="text" id="filename-input" placeholder="model" />
+		                </label>
+		            </div>
+		            
+		            <div class="options">
+		                <label class="checkbox-label" data-tooltip="Remove X/Z position tracks from animations">
+		                    <input type="checkbox" id="in-place-checkbox" />
+		                    <span>In Place (Remove root motion)</span>
+		                </label>
+		                <button class="settings-btn" id="settings-btn" title="Settings" data-tooltip="Customize scene appearance">
+		                    <img src="assets/settings-icon.svg" alt="Settings" width="20" height="20" />
+		                </button>
+		            </div>
+		            
+		            <div class="actions">
+		                <button class="button -primary" id="export-btn">Export GLB</button>
+		                <button class="button -danger" onclick="window.location.reload()">Reset</button>
+		            </div>
 		        </div>
 		        
 		        <!-- Settings Modal -->
@@ -192,11 +271,6 @@
 		                    </label>
 		                </div>
 		            </div>
-		        </div>
-		        
-		        <div class="actions">
-		            <button class="button -primary" id="export-btn">Export GLB</button>
-		            <button class="button" onclick="window.location.reload()">Reset</button>
 		        </div>
 	        </aside>
 	    </main>	
