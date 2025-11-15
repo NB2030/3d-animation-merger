@@ -24,12 +24,30 @@
 		                <input id="source" type="file" accept=".fbx" />
 		            </label>
 		            <label for="">
+		                <span>UV Texture Map (PNG)</span>
+		                <input id="texture-map" type="file" accept=".png" />
+		            </label>
+		            <label for="">
 		                <span>Animation FBX (multiple allowed)</span>
 		                <input id="source-animations" type="file" accept=".fbx" multiple />
 		            </label>
 		        </div>
 
-		        <div class="animations" id="animations-ui"></div>		       
+		        <div class="animations" id="animations-ui"></div>
+		        
+		        <div class="export-settings">
+		            <label for="filename-input">
+		                <span>Export Filename</span>
+		                <input type="text" id="filename-input" placeholder="model" />
+		            </label>
+		        </div>
+		        
+		        <div class="options">
+		            <label class="checkbox-label">
+		                <input type="checkbox" id="in-place-checkbox" />
+		                <span>In Place (Remove root motion)</span>
+		            </label>
+		        </div>
 		        
 		        <div class="actions">
 		            <button class="button -primary" id="export-btn">Export GLB</button>

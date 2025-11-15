@@ -4,6 +4,16 @@
 
 This tool allows to merge 3d animations of the same model from multiple FBX files to one GLB file.
 
+## Features
+
+- Load FBX models with animations
+- Apply custom UV texture maps (PNG) to models
+- Merge multiple animation FBX files
+- Interactive 3D preview with transform controls
+- **Custom export filename** - Name your exported GLB file (auto-fills from source file)
+- **In Place mode** - Remove root motion from animations (character stays in place)
+- Export combined model with textures and animations as GLB
+
 ## Team
 * **Jérémy Minié** — Front-end Developer
 

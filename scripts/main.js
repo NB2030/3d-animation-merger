@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'; 
 import { GLTFExporter } from './GLTFExporter.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 class App {
@@ -11,16 +12,22 @@ class App {
         this.$canvas = document.querySelector('canvas')
         this.$source = document.getElementById('source')
         this.$animation = document.getElementById('source-animations')
+        this.$textureMap = document.getElementById('texture-map')
         this.$export = document.getElementById('export-btn')
         this.$ui = document.getElementById('animations-ui')
         this.$transformBtn = document.getElementById('transform-mode-btn')
+        this.$inPlaceCheckbox = document.getElementById('in-place-checkbox')
+        this.$filenameInput = document.getElementById('filename-input')
 
         // Events
         this.$source.addEventListener('change', this.onSourceChange.bind(this))
         this.$animation.addEventListener('change', this.onAnimationChange.bind(this))
+        this.$textureMap.addEventListener('change', this.onTextureChange.bind(this))
 
         this.$export.addEventListener('click', this.exportGLB.bind(this))
         this.$transformBtn.addEventListener('click', this.changeTransformMode.bind(this));			        
+        
+        this.customTexture = null;
         
         this.resize();
         this.resizeBind = this.resize.bind(this);
@@ -44,9 +51,9 @@ class App {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
         this.renderer.setClearColor("#15151a");
 
-        this.renderer.outputEncoding = THREE.sRGBEncoding;
-        // renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        // renderer.toneMappingExposure = 1;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.25;
 
         this.renderer.setSize(this.sizes.width, this.sizes.height)
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -72,8 +79,18 @@ class App {
         /**
          * Lights
          */
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1)
-        this.scene.add(ambientLight)        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+        this.scene.add(ambientLight)
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
+        hemi.position.set(0, 1, 0)
+        this.scene.add(hemi)
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2)
+        dirLight.position.set(5, 10, 5)
+        dirLight.castShadow = true
+        dirLight.shadow.mapSize.set(1024, 1024)
+        dirLight.shadow.camera.near = 0.1
+        dirLight.shadow.camera.far = 50
+        this.scene.add(dirLight)
 
         // Base camera
         this.camera = new THREE.PerspectiveCamera(30, this.sizes.width / this.sizes.height, 0.01,100)
@@ -97,6 +114,10 @@ class App {
         this.scene.add(this.transformControl)
 
         this.scene.fog = new THREE.Fog("#15151a", 10, 30);
+
+        const pmrem = new THREE.PMREMGenerator(this.renderer)
+        const envTex = pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture
+        this.scene.environment = envTex
     }
 
     initLoaders() {
@@ -151,13 +172,19 @@ class App {
             const file = e.currentTarget.files[0];      
 
             const filename = file.name;
-            const extension = filename.split( '.' ).pop().toLowerCase();  
+            const extension = filename.split( '.' ).pop().toLowerCase();
+            
+            // Auto-set filename from source file (without extension)
+            const baseFilename = filename.replace(/\.[^/.]+$/, '');
+            if(this.$filenameInput && !this.$filenameInput.value) {
+                this.$filenameInput.value = baseFilename;
+            }
 
             const reader = new FileReader();
             reader.addEventListener( 'load', ( event ) => {
                 const contents = event.target.result;
 
-                if(this.object) this.scene.remove(this.object);
+                if(this.object) { this.disposeObject(this.object); this.scene.remove(this.object); }
 
                 this.object = this.fbxLoader.parse( contents );
                 this.object.scale.set(0.01,0.01,0.01)
@@ -171,7 +198,35 @@ class App {
                     // } );                
                 }
 
+                this.object.traverse((child) => {
+                    if(child.isMesh) {
+                        child.castShadow = true
+                        child.receiveShadow = true
+                        const m = child.material
+                        if(m && m.map) {
+                            m.map.colorSpace = THREE.SRGBColorSpace
+                            m.needsUpdate = true
+                        }
+                        if(Array.isArray(m)) {
+                            for(const mat of m) {
+                                if(mat && mat.map) {
+                                    mat.map.colorSpace = THREE.SRGBColorSpace
+                                    mat.needsUpdate = true
+                                }
+                            }
+                        }
+                        if(m && !m.map) {
+                            if(m.color) m.color.set(0xffffff)
+                        }
+                    }
+                })
+
                 this.updateUI()
+                this.fixNonPBRMaterials()
+                
+                if(this.customTexture) {
+                    this.applyTextureToModel(this.customTexture);
+                }
                 
                 this.scene.add(this.object)
 
@@ -209,12 +264,86 @@ class App {
                     }
 
                     this.updateUI()    
+                    this.fixNonPBRMaterials()
                 }, { once: true } );
                 reader.readAsArrayBuffer( file );
             }        
         }
 
         e.currentTarget.value = ''
+    }
+
+    onTextureChange(e) {
+        const file = e.currentTarget.files[0];
+        if(!file) return;
+
+        const reader = new FileReader();
+        reader.addEventListener('load', (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const textureLoader = new THREE.TextureLoader();
+                const texture = textureLoader.load(event.target.result);
+                texture.colorSpace = THREE.SRGBColorSpace;
+                texture.flipY = true;
+                
+                this.customTexture = texture;
+                
+                if(this.object) {
+                    this.applyTextureToModel(texture);
+                }
+                
+                console.log('Texture loaded and applied');
+            };
+            img.src = event.target.result;
+        }, { once: true });
+        reader.readAsDataURL(file);
+    }
+
+    applyTextureToModel(texture) {
+        if(!this.object) return;
+        
+        this.object.traverse((child) => {
+            if(child.isMesh) {
+                if(Array.isArray(child.material)) {
+                    child.material.forEach(mat => {
+                        if(mat.map) mat.map.dispose();
+                        mat.map = texture;
+                        mat.needsUpdate = true;
+                    });
+                } else {
+                    if(child.material.map) child.material.map.dispose();
+                    child.material.map = texture;
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+    }
+
+    fixNonPBRMaterials() {
+        if(!this.object) return;
+        this.object.traverse((child) => {
+            if(!child.isMesh || !child.material) return;
+            const mat = child.material;
+            const toSRGB = (tex) => { if(tex && tex.colorSpace !== THREE.SRGBColorSpace) { tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true; } };
+            toSRGB(mat.map);
+            toSRGB(mat.emissiveMap);
+            const isNonPBR = mat.isMeshPhongMaterial || mat.isMeshLambertMaterial || mat.isMeshBasicMaterial;
+            if(isNonPBR) {
+                const opts = {
+                    map: mat.map || null,
+                    color: mat.color ? mat.color.clone() : new THREE.Color(0xffffff),
+                    transparent: !!mat.transparent,
+                    opacity: mat.opacity !== undefined ? mat.opacity : 1,
+                    side: mat.side
+                };
+                const basic = new THREE.MeshBasicMaterial(opts);
+                child.material = basic;
+                child.material.needsUpdate = true;
+            } else if(mat.isMeshStandardMaterial) {
+                if(mat.metalness === undefined) mat.metalness = 0;
+                if(mat.roughness === undefined) mat.roughness = 1;
+            }
+        });
     }
 
     updateUI() {
@@ -262,6 +391,46 @@ class App {
         this.transformControl.setMode(newMode);
     }
 
+    makeAnimationsInPlace(animations) {
+        if(!animations || animations.length === 0) return animations;
+        
+        const processedAnimations = [];
+        
+        for(let clip of animations) {
+            const newClip = clip.clone();
+            
+            // Find position tracks (usually named like "mixamorig:Hips.position" or similar)
+            for(let track of newClip.tracks) {
+                const trackName = track.name.toLowerCase();
+                
+                // Check if this is a root position track (X and Z movement)
+                if(trackName.includes('position') && 
+                   (trackName.includes('hips') || trackName.includes('root') || trackName.includes('pelvis'))) {
+                    
+                    const values = track.values;
+                    const itemSize = track.getValueSize();
+                    
+                    if(itemSize === 3) { // Position track (x, y, z)
+                        // Calculate initial position
+                        const startX = values[0];
+                        const startZ = values[2];
+                        
+                        // Remove X and Z movement, keep Y (vertical movement)
+                        for(let i = 0; i < values.length; i += 3) {
+                            values[i] = startX;     // X stays at start position
+                            // values[i + 1] unchanged (keep Y movement for jumping, etc.)
+                            values[i + 2] = startZ; // Z stays at start position
+                        }
+                    }
+                }
+            }
+            
+            processedAnimations.push(newClip);
+        }
+        
+        return processedAnimations;
+    }
+
     exportGLB() {
         console.log('export requested');
 
@@ -285,19 +454,34 @@ class App {
             save( new Blob( [ buffer ], { type: 'application/octet-stream' } ), filename );
         }
 
+        const target = this.object || this.scene
+        if(!target) return
+
+        // Get custom filename or use default
+        let filename = this.$filenameInput.value.trim() || 'model';
+        // Remove any file extension if user added it
+        filename = filename.replace(/\.(glb|gltf)$/i, '');
+
+        // Apply In Place if checkbox is checked
+        let animationsToExport = target.animations || [];
+        if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+            console.log('Applying In Place to animations...');
+            animationsToExport = this.makeAnimationsInPlace(animationsToExport);
+        }
+
         gltfExporter.parse(
-            this.object,
+            target,
             function ( result ) {
 
                 if ( result instanceof ArrayBuffer ) {
 
-                    saveArrayBuffer( result, 'scene.glb' );
+                    saveArrayBuffer( result, filename + '.glb' );
 
                 } else {
 
                     const output = JSON.stringify( result, null, 2 );
                     console.log( output );
-                    saveString( output, 'scene.gltf' );
+                    saveString( output, filename + '.gltf' );
 
                 }
 
@@ -309,7 +493,7 @@ class App {
             },
             {
                 binary: true,
-                animations: this.object.animations
+                animations: animationsToExport
             }
         );
     }
@@ -319,6 +503,25 @@ class App {
         window.cancelAnimationFrame(this.raf)
         this.scene = this.renderer = null    
         console.log(this.scene, this.renderer);
+    }
+
+    disposeObject(object) {
+        object.traverse((child) => {
+            if(child.isMesh) {
+                if(child.geometry) child.geometry.dispose();
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                for(const m of mats) {
+                    if(!m) continue;
+                    if(m.map && m.map.dispose) m.map.dispose();
+                    if(m.emissiveMap && m.emissiveMap.dispose) m.emissiveMap.dispose();
+                    if(m.normalMap && m.normalMap.dispose) m.normalMap.dispose();
+                    if(m.roughnessMap && m.roughnessMap.dispose) m.roughnessMap.dispose();
+                    if(m.metalnessMap && m.metalnessMap.dispose) m.metalnessMap.dispose();
+                    m.dispose && m.dispose();
+                }
+            }
+        });
+        if(this.mixer) { try { this.mixer.stopAllAction(); } catch{} this.mixer = null; }
     }
 }
 

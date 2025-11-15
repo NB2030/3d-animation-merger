@@ -13,7 +13,7 @@ server.init({
 	ghostMode: false,
 	server: true
 }, (err) => {
-	console.error(err)    
+	if (err) console.error(err)
 });
 
 // Watch source scripts

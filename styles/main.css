@@ -138,4 +138,56 @@ label span {
 
 .button.-primary {
 	color: chartreuse;
+}
+
+.options {
+	padding: 1em;
+	background-color: rgba(0,0,0,0.1);
+	border-top: 1px solid rgba(150, 159, 191, 0.1);
+}
+
+.checkbox-label {
+	flex-direction: row;
+	align-items: center;
+	margin: 0;
+	cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+	margin-right: 0.5em;
+	cursor: pointer;
+}
+
+.checkbox-label span {
+	margin-bottom: 0;
+}
+
+.export-settings {
+	padding: 1em;
+	background-color: rgba(0,0,0,0.15);
+	border-top: 1px solid rgba(150, 159, 191, 0.1);
+}
+
+.export-settings label {
+	margin: 0;
+}
+
+.export-settings input[type="text"] {
+	background-color: rgba(0,0,0,0.3);
+	color: currentColor;
+	border: 1px solid rgba(150, 159, 191, 0.2);
+	padding: 0.5em;
+	width: 100%;
+	box-sizing: border-box;
+	font-family: inherit;
+}
+
+.export-settings input[type="text"]:hover {
+	border-color: rgba(150, 159, 191, 0.4);
+}
+
+.export-settings input[type="text"]:focus {
+	outline: 0;
+	border-color: chartreuse;
+	background-color: rgba(0,0,0,0.4);
 } 
