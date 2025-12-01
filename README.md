@@ -1,4 +1,4 @@
-![3d Animation Merger](screen.jpg)
+![3d Animation Merger]
 
 # 3d Animation Merger
 
