@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [main, master, dev, develop, feature/*, release/*, last-big-updates, testbuild-multiplatform]
+    branches: [main, master, last-big-updates, testbuild-multiplatform]
     tags:
       - 'v*'
   pull_request:
