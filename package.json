@@ -1,14 +1,109 @@
 {
+  "name": "3d-animation-merger",
+  "version": "1.0.0",
+  "description": "3D Animation Merger - Merge FBX animations and export to GLB",
+  "main": "electron/main.js",
   "dependencies": {
+    "electron-store": "^11.0.2",
     "three": "^0.142.0"
   },
   "type": "module",
   "scripts": {
-    "start": "node --experimental-json-modules --no-warnings build/watch.js",
-    "build": "node --experimental-json-modules --no-warnings build/build.js"
+    "start": "electron .",
+    "dev": "concurrently \"node --experimental-json-modules --no-warnings build/watch.js\" \"electron .\"",
+    "build": "node --experimental-json-modules --no-warnings build/build.js",
+    "generate-icons": "node build-resources/generate-icons.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder --win --mac --linux",
+    "dist:installer": "electron-builder --win nsis",
+    "test": "vitest --run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
+    "@vitest/ui": "^4.0.13",
     "browser-sync": "^2.27.10",
-    "esbuild": "^0.14.49"
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.3",
+    "electron-builder": "^26.0.12",
+    "electron-mocha": "^13.1.0",
+    "esbuild": "^0.14.49",
+    "fast-check": "^4.3.0",
+    "sharp": "^0.34.5",
+    "vitest": "^4.0.13"
+  },
+  "build": {
+    "appId": "com.3danimationmerger.app",
+    "productName": "3D Animation Merger",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "electron/**/*",
+      "bin/**/*",
+      "styles/**/*",
+      "assets/**/*",
+      "index.html",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build-resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "build-resources/icon.icns",
+      "category": "public.app-category.graphics-design"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "rpm",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build-resources/icons",
+      "category": "Graphics"
+    }
   }
 }

@@ -765,11 +765,89 @@ main {
 	text-shadow: 0 0 10px rgba(127, 255, 0, 0.3);
 }
 
+.rename-animation-btn {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	margin: 0 4px 0 8px;
+	background: linear-gradient(135deg, rgba(127, 255, 0, 0.12) 0%, rgba(127, 255, 0, 0.18) 100%);
+	color: chartreuse;
+	border: 2px solid rgba(127, 255, 0, 0.35);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	box-shadow: 0 2px 8px rgba(127, 255, 0, 0.2),
+	            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.rename-animation-btn::before {
+	content: '';
+	position: absolute;
+	inset: -2px;
+	border-radius: 6px;
+	background: linear-gradient(135deg, rgba(127, 255, 0, 0.3), rgba(127, 255, 0, 0.3));
+	opacity: 0;
+	transition: opacity 0.3s ease;
+	z-index: -1;
+	filter: blur(8px);
+}
+
+.rename-animation-btn:hover {
+	background: linear-gradient(135deg, rgba(127, 255, 0, 0.25) 0%, rgba(127, 255, 0, 0.35) 100%);
+	border-color: rgba(127, 255, 0, 0.6);
+	color: #9fff4d;
+	box-shadow: 0 0 20px rgba(127, 255, 0, 0.5),
+	            0 4px 16px rgba(127, 255, 0, 0.3),
+	            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+	transform: scale(1.1);
+}
+
+.rename-animation-btn:hover::before {
+	opacity: 1;
+}
+
+.rename-animation-btn:active {
+	background: linear-gradient(135deg, rgba(127, 255, 0, 0.35) 0%, rgba(127, 255, 0, 0.45) 100%);
+	transform: scale(0.95);
+	box-shadow: 0 0 15px rgba(127, 255, 0, 0.6),
+	            inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.rename-animation-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.animation-item.editing .animation-name-input {
+	border-color: chartreuse;
+	box-shadow: 0 0 20px rgba(127, 255, 0, 0.3),
+	            inset 0 0 20px rgba(127, 255, 0, 0.1);
+}
+
+.animation-item.editing .rename-animation-btn {
+	background: linear-gradient(135deg, rgba(68, 150, 255, 0.12) 0%, rgba(68, 150, 255, 0.18) 100%);
+	color: #6ba3ff;
+	border-color: rgba(68, 150, 255, 0.35);
+}
+
+.animation-item.editing .rename-animation-btn:hover {
+	background: linear-gradient(135deg, rgba(68, 150, 255, 0.25) 0%, rgba(68, 150, 255, 0.35) 100%);
+	border-color: rgba(68, 150, 255, 0.6);
+	color: #88b3ff;
+	box-shadow: 0 0 20px rgba(68, 150, 255, 0.5),
+	            0 4px 16px rgba(68, 150, 255, 0.3),
+	            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
 .delete-animation-btn {
 	flex-shrink: 0;
 	width: 36px;
 	height: 36px;
-	margin: 0 6px 0 10px;
+	margin: 0 6px 0 4px;
 	background: linear-gradient(135deg, rgba(255, 0, 0, 0.12) 0%, rgba(255, 68, 68, 0.18) 100%);
 	color: #ff5555;
 	border: 2px solid rgba(255, 0, 0, 0.35);

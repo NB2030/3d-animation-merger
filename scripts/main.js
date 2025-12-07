@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'; 
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from './GLTFExporter.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { isElectron, setupFileInputAdapter, adaptFileWriting } from './electron-adapter.js';
 
 class App {
     constructor(m) {
@@ -14,6 +16,7 @@ class App {
         this.$animation = document.getElementById('source-animations')
         this.$textureMap = document.getElementById('texture-map')
         this.$export = document.getElementById('export-btn')
+        this.$reset = document.getElementById('reset-btn')
         this.$ui = document.getElementById('animations-ui')
         this.$transformBtns = document.querySelectorAll('.transform-btn')
         this.$resetTransformBtn = document.querySelector('.reset-transform-btn')
@@ -77,6 +80,10 @@ class App {
         })
 
         this.$export.addEventListener('click', this.exportGLB.bind(this))
+        this.$reset.addEventListener('click', () => window.location.reload())
+        
+        // In Place checkbox event
+        this.$inPlaceCheckbox.addEventListener('change', this.onInPlaceToggle.bind(this))
         
         // Search animations
         this.$animationsSearch.addEventListener('input', this.onSearchAnimations.bind(this))
@@ -174,6 +181,11 @@ class App {
         this.initScene();     
         this.initLoaders();
 
+        // Initialize Electron adapters if running in Electron
+        if (isElectron()) {
+            this.initElectronAdapters();
+        }
+
         this.render();   
     }
 
@@ -258,6 +270,91 @@ class App {
 
     initLoaders() {
         this.fbxLoader = new FBXLoader();
+        this.gltfLoader = new GLTFLoader();
+    }
+
+    initElectronAdapters() {
+        console.log('Initializing Electron adapters...');
+        
+        // Adapt source FBX input with FBX filter
+        setupFileInputAdapter(this.$source, {
+            title: 'Select Source FBX Model',
+            filters: [
+                { name: 'FBX Files', extensions: ['fbx'] },
+                { name: 'GLB Files', extensions: ['glb'] },
+                { name: 'GLTF Files', extensions: ['gltf'] }
+            ],
+            properties: ['openFile']
+        });
+        
+        // Adapt animation FBX input with multi-select
+        setupFileInputAdapter(this.$animation, {
+            title: 'Select Animation FBX Files',
+            filters: [
+                { name: 'FBX Files', extensions: ['fbx'] },
+                { name: 'GLB Files', extensions: ['glb'] },
+                { name: 'GLTF Files', extensions: ['gltf'] }
+            ],
+            properties: ['openFile', 'multiSelections']
+        });
+        
+        // Adapt shaded texture input with image filters
+        setupFileInputAdapter(this.$textureMap, {
+            title: 'Select Texture Image',
+            filters: [
+                { name: 'Image Files', extensions: ['png', 'jpg', 'jpeg'] }
+            ],
+            properties: ['openFile']
+        });
+        
+        // Adapt PBR texture inputs with image filters
+        const imageFilters = [
+            { name: 'Image Files', extensions: ['png', 'jpg', 'jpeg'] }
+        ];
+        
+        setupFileInputAdapter(this.$textureBaseColor, {
+            title: 'Select Base Color Texture',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$textureNormal, {
+            title: 'Select Normal Map',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$texturePacked, {
+            title: 'Select Packed ORM Texture',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$textureMetallic, {
+            title: 'Select Metallic Map',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$textureRoughness, {
+            title: 'Select Roughness Map',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$textureAO, {
+            title: 'Select Ambient Occlusion Map',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        setupFileInputAdapter(this.$textureEmissive, {
+            title: 'Select Emissive Map',
+            filters: imageFilters,
+            properties: ['openFile']
+        });
+        
+        console.log('Electron adapters initialized successfully');
     }
 
     resize() {
@@ -313,7 +410,7 @@ class App {
     }
 
     async onSourceChange(e) {
-        return new Promise(resolve => {
+        return new Promise(async (resolve) => {
             const file = e.currentTarget.files[0];      
 
             const filename = file.name;
@@ -329,10 +426,48 @@ class App {
                 this.$filenameInput.value = baseFilename;
             }
 
-            const reader = new FileReader();
-            reader.addEventListener( 'load', ( event ) => {
-                const contents = event.target.result;
+            // Get file contents (either from Electron adapter or FileReader)
+            let contents;
+            if(file.data) {
+                // File already loaded by Electron adapter
+                contents = file.data;
+            } else {
+                // Use FileReader for browser
+                contents = await new Promise((resolveRead) => {
+                    const reader = new FileReader();
+                    reader.addEventListener('load', (event) => {
+                        resolveRead(event.target.result);
+                    }, { once: true });
+                    reader.readAsArrayBuffer(file);
+                });
+            }
 
+            // Handle GLB/GLTF files
+            if(extension === 'glb' || extension === 'gltf') {
+                this.gltfLoader.parse(contents, '', (gltf) => {
+                    if(this.object) { this.disposeObject(this.object); this.scene.remove(this.object); }
+                    
+                    this.object = gltf.scene;
+                    this.object.animations = gltf.animations || [];
+                    
+                    if(this.object.animations.length) {
+                        this.mixer = new THREE.AnimationMixer(this.object);
+                        this.object.traverse(function(obj) { obj.frustumCulled = false; });
+                    }
+                    
+                    this.processLoadedModel();
+                    label.classList.remove('loading');
+                    resolve();
+                }, (error) => {
+                    console.error('Error loading GLB/GLTF:', error);
+                    label.classList.remove('loading');
+                    resolve();
+                });
+                return;
+            }
+
+            // Handle FBX files
+            try {
                 if(this.object) { this.disposeObject(this.object); this.scene.remove(this.object); }
 
                 this.object = this.fbxLoader.parse( contents );
@@ -347,58 +482,70 @@ class App {
                     // } );                
                 }
 
-                this.object.traverse((child) => {
-                    if(child.isMesh) {
-                        child.castShadow = true
-                        child.receiveShadow = true
-                        const m = child.material
-                        if(m && m.map) {
-                            m.map.colorSpace = THREE.SRGBColorSpace
-                            m.needsUpdate = true
-                        }
-                        if(Array.isArray(m)) {
-                            for(const mat of m) {
-                                if(mat && mat.map) {
-                                    mat.map.colorSpace = THREE.SRGBColorSpace
-                                    mat.needsUpdate = true
-                                }
-                            }
-                        }
-                        if(m && !m.map) {
-                            if(m.color) m.color.set(0xffffff)
-                        }
-                    }
-                })
-
-                this.updateUI()
-                this.fixNonPBRMaterials()
-                
-                // Apply textures based on current type
-                if(this.textureType === 'shaded' && this.customTexture) {
-                    this.applyTextureToModel(this.customTexture);
-                } else if(this.textureType === 'pbr') {
-                    this.applyPBRTexturesToModel();
-                }
-                
-                this.scene.add(this.object)
-
-                console.log(this.object); 
-
-                // Only attach transform control if not in 'none' mode
-                const activeBtn = document.querySelector('.transform-btn.active');
-                const activeMode = activeBtn ? activeBtn.dataset.mode : 'none';
-                if(activeMode !== 'none') {
-                    this.transformControl.attach(this.object);
-                }
+                this.processLoadedModel();
                 
                 // Remove loading state
                 label.classList.remove('loading');
 
-                resolve()
-
-            }, { once: true } );
-            reader.readAsArrayBuffer( file );
+                resolve();
+            } catch(error) {
+                console.error('Error loading FBX:', error);
+                label.classList.remove('loading');
+                resolve();
+            }
         })
+    }
+
+    processLoadedModel() {
+        this.object.traverse((child) => {
+            if(child.isMesh) {
+                child.castShadow = true
+                child.receiveShadow = true
+                const m = child.material
+                if(m && m.map) {
+                    m.map.colorSpace = THREE.SRGBColorSpace
+                    m.needsUpdate = true
+                }
+                if(Array.isArray(m)) {
+                    for(const mat of m) {
+                        if(mat && mat.map) {
+                            mat.map.colorSpace = THREE.SRGBColorSpace
+                            mat.needsUpdate = true
+                        }
+                    }
+                }
+                if(m && !m.map) {
+                    if(m.color) m.color.set(0xffffff)
+                }
+            }
+        })
+
+        // Store original animations and apply In Place if needed
+        this.originalAnimations = this.object.animations.map(clip => clip.clone());
+        if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+            this.object.animations = this.makeAnimationsInPlace(this.originalAnimations);
+        }
+        
+        this.updateUI()
+        this.fixNonPBRMaterials()
+        
+        // Apply textures based on current type
+        if(this.textureType === 'shaded' && this.customTexture) {
+            this.applyTextureToModel(this.customTexture);
+        } else if(this.textureType === 'pbr') {
+            this.applyPBRTexturesToModel();
+        }
+        
+        this.scene.add(this.object)
+
+        console.log(this.object); 
+
+        // Only attach transform control if not in 'none' mode
+        const activeBtn = document.querySelector('.transform-btn.active');
+        const activeMode = activeBtn ? activeBtn.dataset.mode : 'none';
+        if(activeMode !== 'none') {
+            this.transformControl.attach(this.object);
+        }
     }
 
     async onAnimationChange(e) {
@@ -411,30 +558,92 @@ class App {
 
         for(let file of files) {
             if(!this.object) {
-                await this.onSourceChange(e)
-            } else {                
-                const reader = new FileReader();
-                reader.addEventListener( 'load', ( event ) => {
-                    const contents = event.target.result;
+                await this.onSourceChange(e);
+                break;
+            } else {
+                const extension = file.name.split('.').pop().toLowerCase();
+                
+                // Get file contents (either from Electron adapter or FileReader)
+                let contents;
+                if(file.data) {
+                    // File already loaded by Electron adapter
+                    contents = file.data;
+                } else {
+                    // Use FileReader for browser
+                    contents = await new Promise((resolveRead) => {
+                        const reader = new FileReader();
+                        reader.addEventListener('load', (event) => {
+                            resolveRead(event.target.result);
+                        }, { once: true });
+                        reader.readAsArrayBuffer(file);
+                    });
+                }
+                
+                // Handle GLB/GLTF animation files
+                if(extension === 'glb' || extension === 'gltf') {
+                    await new Promise((resolve) => {
+                        this.gltfLoader.parse(contents, '', (gltf) => {
+                            if(gltf.animations && gltf.animations.length) {
+                                for(let animation of gltf.animations) {
+                                    animation.name = file.name.split('.')[0];
+                                    
+                                    if(!this.originalAnimations) {
+                                        this.originalAnimations = [];
+                                    }
+                                    this.originalAnimations.push(animation.clone());
+                                    
+                                    if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+                                        const processed = this.makeAnimationsInPlace([animation]);
+                                        this.object.animations.push(processed[0]);
+                                    } else {
+                                        this.object.animations.push(animation);
+                                    }
+                                }
+                            }
+                            
+                            this.updateUI();
+                            this.fixNonPBRMaterials();
+                            resolve();
+                        }, (error) => {
+                            console.error('Error loading GLB/GLTF animation:', error);
+                            resolve();
+                        });
+                    });
+                } else {
+                    // Handle FBX animation files
+                    try {
+                        let object = this.fbxLoader.parse( contents );
 
-                    let object = this.fbxLoader.parse( contents );
+                        if(object.animations.length) {
+                            for(let animation of object.animations) {
+                                animation.name = file.name.split('.')[0];
+                                // Add to original animations
+                                if(!this.originalAnimations) {
+                                    this.originalAnimations = [];
+                                }
+                                this.originalAnimations.push(animation.clone());
+                                
+                                // Add to current animations (apply In Place if needed)
+                                if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+                                    const processed = this.makeAnimationsInPlace([animation]);
+                                    this.object.animations.push(processed[0]);
+                                } else {
+                                    this.object.animations.push(animation);
+                                }
+                            }                        
+                        }
 
-                    if(object.animations.length) {
-                        for(let animation of object.animations) {
-                            animation.name = file.name.split('.')[0]
-                            this.object.animations.push(animation)
-                        }                        
+                        this.updateUI();
+                        this.fixNonPBRMaterials();
+                    } catch(error) {
+                        console.error('Error loading FBX animation:', error);
                     }
-
-                    this.updateUI()    
-                    this.fixNonPBRMaterials()
-                }, { once: true } );
-                reader.readAsArrayBuffer( file );
+                }
             }        
         }
 
         label.classList.remove('loading');
-        e.currentTarget.value = ''
+        e.currentTarget.value = '';
     }
 
     onAnimationDragOver(e) {
@@ -457,20 +666,23 @@ class App {
         const files = e.dataTransfer.files;
         if(!files || files.length === 0) return;
 
-        // Filter only FBX files
-        const fbxFiles = Array.from(files).filter(file => 
-            file.name.toLowerCase().endsWith('.fbx')
-        );
+        // Filter FBX and GLB/GLTF files
+        const modelFiles = Array.from(files).filter(file => {
+            const ext = file.name.toLowerCase();
+            return ext.endsWith('.fbx') || ext.endsWith('.glb') || ext.endsWith('.gltf');
+        });
 
-        if(fbxFiles.length === 0) {
-            console.warn('No FBX files found in dropped items');
+        if(modelFiles.length === 0) {
+            console.warn('No FBX/GLB/GLTF files found in dropped items');
             return;
         }
 
         // Show loading state
         this.$ui.classList.add('loading');
 
-        for(let file of fbxFiles) {
+        for(let file of modelFiles) {
+            const extension = file.name.split('.').pop().toLowerCase();
+            
             if(!this.object) {
                 // If no source model, load first file as source
                 const fakeEvent = {
@@ -485,34 +697,87 @@ class App {
                     }
                 };
                 await this.onSourceChange(fakeEvent);
+                break;
             } else {
                 // Load as animation
-                const reader = new FileReader();
-                await new Promise((resolve) => {
-                    reader.addEventListener('load', (event) => {
-                        const contents = event.target.result;
-                        let object = this.fbxLoader.parse(contents);
+                if(extension === 'glb' || extension === 'gltf') {
+                    // Handle GLB/GLTF
+                    await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.addEventListener('load', (event) => {
+                            const contents = event.target.result;
+                            
+                            this.gltfLoader.parse(contents, '', (gltf) => {
+                                if(gltf.animations && gltf.animations.length) {
+                                    for(let animation of gltf.animations) {
+                                        animation.name = file.name.split('.')[0];
+                                        
+                                        if(!this.originalAnimations) {
+                                            this.originalAnimations = [];
+                                        }
+                                        this.originalAnimations.push(animation.clone());
+                                        
+                                        if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+                                            const processed = this.makeAnimationsInPlace([animation]);
+                                            this.object.animations.push(processed[0]);
+                                        } else {
+                                            this.object.animations.push(animation);
+                                        }
+                                    }
+                                }
+                                
+                                this.updateUI();
+                                this.fixNonPBRMaterials();
+                                resolve();
+                            }, (error) => {
+                                console.error('Error loading GLB/GLTF:', error);
+                                resolve();
+                            });
+                        }, { once: true });
+                        reader.readAsArrayBuffer(file);
+                    });
+                } else {
+                    // Handle FBX
+                    const reader = new FileReader();
+                    await new Promise((resolve) => {
+                        reader.addEventListener('load', (event) => {
+                            const contents = event.target.result;
+                            let object = this.fbxLoader.parse(contents);
 
-                        if(object.animations.length) {
-                            for(let animation of object.animations) {
-                                animation.name = file.name.split('.')[0];
-                                this.object.animations.push(animation);
+                            if(object.animations.length) {
+                                for(let animation of object.animations) {
+                                    animation.name = file.name.split('.')[0];
+                                    
+                                    // Add to original animations
+                                    if(!this.originalAnimations) {
+                                        this.originalAnimations = [];
+                                    }
+                                    this.originalAnimations.push(animation.clone());
+                                    
+                                    // Add to current animations (apply In Place if needed)
+                                    if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
+                                        const processed = this.makeAnimationsInPlace([animation]);
+                                        this.object.animations.push(processed[0]);
+                                    } else {
+                                        this.object.animations.push(animation);
+                                    }
+                                }
                             }
-                        }
 
-                        this.updateUI();
-                        this.fixNonPBRMaterials();
-                        resolve();
-                    }, { once: true });
-                    reader.readAsArrayBuffer(file);
-                });
+                            this.updateUI();
+                            this.fixNonPBRMaterials();
+                            resolve();
+                        }, { once: true });
+                        reader.readAsArrayBuffer(file);
+                    });
+                }
             }
         }
 
         // Remove loading state
         this.$ui.classList.remove('loading');
         
-        console.log(`Loaded ${fbxFiles.length} FBX file(s) via drag and drop`);
+        console.log(`Loaded ${modelFiles.length} model file(s) via drag and drop`);
     }
 
     onTabChange(e) {
@@ -564,19 +829,39 @@ class App {
         console.log('Texture type changed to:', type);
     }
 
-    onTextureChange(e) {
+    async onTextureChange(e) {
         const file = e.currentTarget.files[0];
         if(!file) return;
 
         const label = e.currentTarget.closest('label');
         label.classList.add('loading');
 
-        const reader = new FileReader();
-        reader.addEventListener('load', (event) => {
+        try {
+            // Get file data URL (either from Electron adapter or FileReader)
+            let dataURL;
+            if(file.data) {
+                // File already loaded by Electron adapter - convert to data URL
+                const blob = new Blob([file.data]);
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(blob);
+                });
+            } else {
+                // Use FileReader for browser
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.addEventListener('load', (event) => {
+                        resolve(event.target.result);
+                    }, { once: true });
+                    reader.readAsDataURL(file);
+                });
+            }
+
             const img = new Image();
             img.onload = () => {
                 const textureLoader = new THREE.TextureLoader();
-                const texture = textureLoader.load(event.target.result);
+                const texture = textureLoader.load(dataURL);
                 texture.colorSpace = THREE.SRGBColorSpace;
                 texture.flipY = true;
                 
@@ -587,14 +872,20 @@ class App {
                 }
                 
                 // Add thumbnail preview
-                this.addTextureThumbnail(label, event.target.result);
+                this.addTextureThumbnail(label, dataURL);
                 
                 label.classList.remove('loading');
                 console.log('Shaded texture loaded and applied');
             };
-            img.src = event.target.result;
-        }, { once: true });
-        reader.readAsDataURL(file);
+            img.onerror = () => {
+                console.error('Failed to load texture image');
+                label.classList.remove('loading');
+            };
+            img.src = dataURL;
+        } catch(error) {
+            console.error('Error loading texture:', error);
+            label.classList.remove('loading');
+        }
     }
     
     addTextureThumbnail(label, imageSrc) {
@@ -631,19 +922,39 @@ class App {
         console.log('Packed texture mode:', this.usePackedTexture);
     }
 
-    onPackedTextureChange(e) {
+    async onPackedTextureChange(e) {
         const file = e.currentTarget.files[0];
         if(!file) return;
 
         const label = e.currentTarget.closest('label');
         label.classList.add('loading');
 
-        const reader = new FileReader();
-        reader.addEventListener('load', (event) => {
+        try {
+            // Get file data URL (either from Electron adapter or FileReader)
+            let dataURL;
+            if(file.data) {
+                // File already loaded by Electron adapter - convert to data URL
+                const blob = new Blob([file.data]);
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(blob);
+                });
+            } else {
+                // Use FileReader for browser
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.addEventListener('load', (event) => {
+                        resolve(event.target.result);
+                    }, { once: true });
+                    reader.readAsDataURL(file);
+                });
+            }
+
             const img = new Image();
             img.onload = () => {
                 const textureLoader = new THREE.TextureLoader();
-                const texture = textureLoader.load(event.target.result);
+                const texture = textureLoader.load(dataURL);
                 texture.colorSpace = THREE.LinearSRGBColorSpace;
                 texture.flipY = true;
                 
@@ -659,29 +970,55 @@ class App {
                 }
                 
                 // Add thumbnail preview
-                this.addTextureThumbnail(label, event.target.result);
+                this.addTextureThumbnail(label, dataURL);
                 
                 label.classList.remove('loading');
                 console.log('Packed ORM texture loaded and applied');
             };
-            img.src = event.target.result;
-        }, { once: true });
-        reader.readAsDataURL(file);
+            img.onerror = () => {
+                console.error('Failed to load packed texture image');
+                label.classList.remove('loading');
+            };
+            img.src = dataURL;
+        } catch(error) {
+            console.error('Error loading packed texture:', error);
+            label.classList.remove('loading');
+        }
     }
 
-    onPBRTextureChange(e, mapType) {
+    async onPBRTextureChange(e, mapType) {
         const file = e.currentTarget.files[0];
         if(!file) return;
 
         const label = e.currentTarget.closest('label');
         label.classList.add('loading');
 
-        const reader = new FileReader();
-        reader.addEventListener('load', (event) => {
+        try {
+            // Get file data URL (either from Electron adapter or FileReader)
+            let dataURL;
+            if(file.data) {
+                // File already loaded by Electron adapter - convert to data URL
+                const blob = new Blob([file.data]);
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(blob);
+                });
+            } else {
+                // Use FileReader for browser
+                dataURL = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.addEventListener('load', (event) => {
+                        resolve(event.target.result);
+                    }, { once: true });
+                    reader.readAsDataURL(file);
+                });
+            }
+
             const img = new Image();
             img.onload = () => {
                 const textureLoader = new THREE.TextureLoader();
-                const texture = textureLoader.load(event.target.result);
+                const texture = textureLoader.load(dataURL);
                 
                 // Set correct color space based on map type
                 if(mapType === 'map' || mapType === 'emissiveMap') {
@@ -699,14 +1036,20 @@ class App {
                 }
                 
                 // Add thumbnail preview
-                this.addTextureThumbnail(label, event.target.result);
+                this.addTextureThumbnail(label, dataURL);
                 
                 label.classList.remove('loading');
                 console.log(`PBR ${mapType} loaded and applied`);
             };
-            img.src = event.target.result;
-        }, { once: true });
-        reader.readAsDataURL(file);
+            img.onerror = () => {
+                console.error(`Failed to load PBR ${mapType} image`);
+                label.classList.remove('loading');
+            };
+            img.src = dataURL;
+        } catch(error) {
+            console.error(`Error loading PBR ${mapType}:`, error);
+            label.classList.remove('loading');
+        }
     }
 
     applyTextureToModel(texture) {
@@ -907,45 +1250,118 @@ class App {
                 let input = document.createElement('input')
                 input.type = "text"
                 input.value = animation.name;
-                input.addEventListener('focus', () => {
-                    // Remove active class from all animation items
-                    document.querySelectorAll('.animation-item').forEach(item => {
-                        item.classList.remove('active');
-                    });
-                    // Add active class to current item
-                    container.classList.add('active');
-                    
-                    // Stop previous animation if any
-                    if(this.animation) {
-                        this.animation.stop();
+                input.readOnly = true;
+                input.className = 'animation-name-input';
+                
+                input.addEventListener('click', () => {
+                    // Only play animation if not in edit mode
+                    if(input.readOnly) {
+                        // Remove active class from all animation items
+                        document.querySelectorAll('.animation-item').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        // Add active class to current item
+                        container.classList.add('active');
+                        
+                        // Stop previous animation if any
+                        if(this.animation) {
+                            this.animation.stop();
+                        }
+                        
+                        // Play new animation
+                        this.animation = this.mixer.clipAction(animation);
+                        
+                        // Check if this is a static pose
+                        const isStaticPose = animation.duration < 0.01;
+                        
+                        if(isStaticPose) {
+                            // For static poses, set to LoopOnce and clamp when finished
+                            this.animation.setLoop(THREE.LoopOnce);
+                            this.animation.clampWhenFinished = true;
+                        } else {
+                            this.animation.setLoop(this.isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+                        }
+                        
+                        // Set animation speed
+                        this.animation.timeScale = this.animationSpeed;
+                        this.animation.play();
+                        
+                        // Update play/pause state
+                        this.isPlaying = true;
+                        this.updatePlayPauseButton();
+                        this.updateLoopButton();
                     }
-                    
-                    // Play new animation
-                    this.animation = this.mixer.clipAction(animation);
-                    
-                    // Check if this is a static pose
-                    const isStaticPose = animation.duration < 0.01;
-                    
-                    if(isStaticPose) {
-                        // For static poses, set to LoopOnce and clamp when finished
-                        this.animation.setLoop(THREE.LoopOnce);
-                        this.animation.clampWhenFinished = true;
-                    } else {
-                        this.animation.setLoop(this.isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
-                    }
-                    
-                    // Set animation speed
-                    this.animation.timeScale = this.animationSpeed;
-                    this.animation.play();
-                    
-                    // Update play/pause state
-                    this.isPlaying = true;
-                    this.updatePlayPauseButton();
-                    this.updateLoopButton();
                 })
-                input.addEventListener('change', () => {
-                    animation.name = input.value
-                    this.updateAnimationsCount()
+                
+                // Create rename button
+                let renameBtn = document.createElement('button')
+                renameBtn.className = 'rename-animation-btn'
+                renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>`
+                renameBtn.title = 'Rename animation'
+                
+                let isEditing = false;
+                let originalName = animation.name;
+                
+                renameBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    
+                    if(!isEditing) {
+                        // Enter edit mode
+                        isEditing = true;
+                        originalName = input.value;
+                        input.readOnly = false;
+                        input.focus();
+                        input.select();
+                        renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>`
+                        renameBtn.title = 'Save name';
+                        container.classList.add('editing');
+                    } else {
+                        // Save and exit edit mode
+                        const newName = input.value.trim() || `Animation_${i}`;
+                        animation.name = newName;
+                        
+                        // Also update in originalAnimations if it exists
+                        if(this.originalAnimations && this.originalAnimations[i]) {
+                            this.originalAnimations[i].name = newName;
+                        }
+                        
+                        console.log(`Animation renamed to: ${newName}`);
+                        
+                        input.readOnly = true;
+                        isEditing = false;
+                        renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>`
+                        renameBtn.title = 'Rename animation';
+                        container.classList.remove('editing');
+                        this.updateAnimationsCount();
+                    }
+                })
+                
+                // Handle Enter key to save
+                input.addEventListener('keydown', (e) => {
+                    if(e.key === 'Enter' && !input.readOnly) {
+                        e.preventDefault();
+                        renameBtn.click();
+                    } else if(e.key === 'Escape' && !input.readOnly) {
+                        // Cancel editing
+                        e.preventDefault();
+                        input.value = originalName;
+                        input.readOnly = true;
+                        isEditing = false;
+                        renameBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>`
+                        renameBtn.title = 'Rename animation';
+                        container.classList.remove('editing');
+                    }
                 })
                 
                 // Create delete button
@@ -962,6 +1378,7 @@ class App {
                 })
                 
                 container.appendChild(input)
+                container.appendChild(renameBtn)
                 container.appendChild(deleteBtn)
                 this.$ui.appendChild(container)
             }
@@ -1066,6 +1483,54 @@ class App {
         console.log('Camera view reset to initial state');
     }
 
+    onInPlaceToggle(e) {
+        const isChecked = e.currentTarget.checked;
+        
+        if(!this.object || !this.object.animations || this.object.animations.length === 0) {
+            return;
+        }
+        
+        // Store original animations if not already stored
+        if(!this.originalAnimations) {
+            this.originalAnimations = this.object.animations.map(clip => clip.clone());
+        }
+        
+        if(isChecked) {
+            // Apply In Place to current animations
+            this.object.animations = this.makeAnimationsInPlace(this.originalAnimations);
+            console.log('In Place applied to preview animations');
+        } else {
+            // Restore original animations
+            this.object.animations = this.originalAnimations.map(clip => clip.clone());
+            console.log('Original animations restored');
+        }
+        
+        // If an animation is currently playing, restart it from the beginning with the new version
+        if(this.animation && this.mixer) {
+            const currentClipName = this.animation.getClip().name;
+            const wasPlaying = this.isPlaying;
+            
+            // Stop current animation
+            this.animation.stop();
+            
+            // Find the new version of the same animation
+            const newClip = this.object.animations.find(clip => clip.name === currentClipName);
+            if(newClip) {
+                this.animation = this.mixer.clipAction(newClip);
+                this.animation.setLoop(this.isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+                this.animation.timeScale = this.animationSpeed;
+                this.animation.reset(); // Reset to first frame
+                
+                if(wasPlaying) {
+                    this.animation.play();
+                }
+            }
+        }
+        
+        // Update UI to reflect changes
+        this.updateUI();
+    }
+
     makeAnimationsInPlace(animations) {
         if(!animations || animations.length === 0) return animations;
         
@@ -1106,7 +1571,7 @@ class App {
         return processedAnimations;
     }
 
-    exportGLB() {
+    async exportGLB() {
         console.log('export requested');
 
         const gltfExporter = new GLTFExporter();
@@ -1116,6 +1581,7 @@ class App {
         this.$export.disabled = true;
         const originalText = this.$export.textContent;
 
+        // Browser fallback save functions
         function save( blob, filename ) {
             const link = document.createElement( 'a' );
             link.style.display = 'none';
@@ -1146,43 +1612,142 @@ class App {
         // Remove any file extension if user added it
         filename = filename.replace(/\.(glb|gltf)$/i, '');
 
-        // Apply In Place if checkbox is checked
+        // Use current animations (already processed if In Place is checked)
         let animationsToExport = target.animations || [];
-        if(this.$inPlaceCheckbox && this.$inPlaceCheckbox.checked) {
-            console.log('Applying In Place to animations...');
-            animationsToExport = this.makeAnimationsInPlace(animationsToExport);
-        }
 
         gltfExporter.parse(
             target,
-            ( result ) => {
+            async ( result ) => {
 
                 if ( result instanceof ArrayBuffer ) {
-
-                    saveArrayBuffer( result, filename + '.glb' );
+                    // Check if running in Electron
+                    if (isElectron()) {
+                        try {
+                            // Convert ArrayBuffer to Blob for Electron adapter
+                            const blob = new Blob([result], { type: 'application/octet-stream' });
+                            
+                            // Use Electron save dialog
+                            const success = await adaptFileWriting(blob, filename + '.glb', {
+                                filters: [
+                                    { name: 'GLB Files', extensions: ['glb'] }
+                                ]
+                            });
+                            
+                            if (success) {
+                                console.log('GLB file saved successfully via Electron');
+                                
+                                // Show success state
+                                this.$export.classList.remove('loading');
+                                this.$export.classList.add('success');
+                                
+                                // Reset after animation
+                                setTimeout(() => {
+                                    this.$export.classList.remove('success');
+                                    this.$export.disabled = false;
+                                }, 2000);
+                            } else {
+                                console.log('Save cancelled or failed');
+                                
+                                // Remove loading state
+                                this.$export.classList.remove('loading');
+                                this.$export.disabled = false;
+                            }
+                        } catch (error) {
+                            console.error('Error saving file via Electron:', error);
+                            
+                            // Show error notification
+                            alert('Failed to save file: ' + (error.message || 'Unknown error'));
+                            
+                            // Remove loading state
+                            this.$export.classList.remove('loading');
+                            this.$export.disabled = false;
+                        }
+                    } else {
+                        // Browser fallback
+                        saveArrayBuffer( result, filename + '.glb' );
+                        
+                        // Show success state
+                        this.$export.classList.remove('loading');
+                        this.$export.classList.add('success');
+                        
+                        // Reset after animation
+                        setTimeout(() => {
+                            this.$export.classList.remove('success');
+                            this.$export.disabled = false;
+                        }, 2000);
+                    }
 
                 } else {
-
+                    // GLTF JSON format
                     const output = JSON.stringify( result, null, 2 );
                     console.log( output );
-                    saveString( output, filename + '.gltf' );
-
+                    
+                    if (isElectron()) {
+                        try {
+                            // Convert string to Blob for Electron adapter
+                            const blob = new Blob([output], { type: 'text/plain' });
+                            
+                            // Use Electron save dialog
+                            const success = await adaptFileWriting(blob, filename + '.gltf', {
+                                filters: [
+                                    { name: 'GLTF Files', extensions: ['gltf'] }
+                                ]
+                            });
+                            
+                            if (success) {
+                                console.log('GLTF file saved successfully via Electron');
+                                
+                                // Show success state
+                                this.$export.classList.remove('loading');
+                                this.$export.classList.add('success');
+                                
+                                // Reset after animation
+                                setTimeout(() => {
+                                    this.$export.classList.remove('success');
+                                    this.$export.disabled = false;
+                                }, 2000);
+                            } else {
+                                console.log('Save cancelled or failed');
+                                
+                                // Remove loading state
+                                this.$export.classList.remove('loading');
+                                this.$export.disabled = false;
+                            }
+                        } catch (error) {
+                            console.error('Error saving file via Electron:', error);
+                            
+                            // Show error notification
+                            alert('Failed to save file: ' + (error.message || 'Unknown error'));
+                            
+                            // Remove loading state
+                            this.$export.classList.remove('loading');
+                            this.$export.disabled = false;
+                        }
+                    } else {
+                        // Browser fallback
+                        saveString( output, filename + '.gltf' );
+                        
+                        // Show success state
+                        this.$export.classList.remove('loading');
+                        this.$export.classList.add('success');
+                        
+                        // Reset after animation
+                        setTimeout(() => {
+                            this.$export.classList.remove('success');
+                            this.$export.disabled = false;
+                        }, 2000);
+                    }
                 }
-                
-                // Show success state
-                this.$export.classList.remove('loading');
-                this.$export.classList.add('success');
-                
-                // Reset after animation
-                setTimeout(() => {
-                    this.$export.classList.remove('success');
-                    this.$export.disabled = false;
-                }, 2000);
 
             },
             ( error ) => {
 
                 console.log( 'An error happened during parsing', error );
+                
+                // Show error notification
+                if (isElectron()) {
+                    alert('Export failed: ' + (error.message || 'Unknown error'));
+                }
                 
                 // Remove loading state on error
                 this.$export.classList.remove('loading');

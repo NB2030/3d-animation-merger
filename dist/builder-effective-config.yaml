@@ -1,0 +1,53 @@
+directories:
+  output: dist
+  buildResources: build-resources
+appId: com.3danimationmerger.app
+productName: 3D Animation Merger
+files:
+  - filter:
+      - electron/**/*
+      - bin/**/*
+      - styles/**/*
+      - assets/**/*
+      - index.html
+      - package.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build-resources/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: build-resources/icon.icns
+  category: public.app-category.graphics-design
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  icon: build-resources/icons
+  category: Graphics
+electronVersion: 39.2.3

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>locomotive - animation-merger</title>
+		<title>3D Animation Merger</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';">
 
 		<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%22.04em%22 y=%22.63em%22 font-size=%22140%22 fill=%22chartreuse%22>⚒︎</text></svg>">
 		<link rel="stylesheet" href="styles/main.css">		
@@ -120,13 +121,13 @@
 		        <div class="tab-content active" id="tab-general">
 		            <div class="files">
 		                <label for=""> 
-		                    <span>Source FBX</span>
-		                    <input id="source" type="file" accept=".fbx" />
+		                    <span>Source FBX/GLB</span>
+		                    <input id="source" type="file" accept=".fbx,.glb,.gltf" />
 		                </label>
 		                
 		                <label for="">
-		                    <span>Animation FBX (multiple allowed)</span>
-		                    <input id="source-animations" type="file" accept=".fbx" multiple />
+		                    <span>Animation FBX/GLB (multiple allowed)</span>
+		                    <input id="source-animations" type="file" accept=".fbx,.glb,.gltf" multiple />
 		                </label>
 		            </div>
 		            
@@ -224,7 +225,7 @@
 		            
 		            <div class="actions">
 		                <button class="button -primary" id="export-btn">Export GLB</button>
-		                <button class="button -danger" onclick="window.location.reload()">Reset</button>
+		                <button class="button -danger" id="reset-btn">Reset</button>
 		            </div>
 		        </div>
 		        
