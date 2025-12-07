@@ -2,6 +2,15 @@
   "name": "3d-animation-merger",
   "version": "1.0.0",
   "description": "3D Animation Merger - Merge FBX animations and export to GLB",
+  "author": {
+    "name": "DevNader",
+    "email": "batahf2030@hotmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NBForgeLab/3d-animation-merger.git"
+  },
   "main": "electron/main.js",
   "dependencies": {
     "electron-store": "^11.0.2",
